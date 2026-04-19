@@ -1,0 +1,17 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: coal_tms_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: tms_db
+      POSTGRES_USER: tms_user
+      POSTGRES_PASSWORD: tms_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
+

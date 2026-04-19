@@ -1,0 +1,9 @@
+backend/.env
+frontend/.env
+backend/node_modules/
+frontend/node_modules/
+frontend/dist/
+runtime/
+tools/
+*.log
+
