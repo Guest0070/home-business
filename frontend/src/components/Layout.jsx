@@ -11,29 +11,31 @@ const nav = [
   { key: 'reports', label: 'Reports', icon: WalletCards }
 ];
 
-export default function Layout({ page, setPage, user, onLogout, children }) {
+export default function Layout({ page, setPage, user, onLogout, children, theme, setTheme, themes }) {
   function logout() {
     setToken(null);
     onLogout();
   }
 
   return (
-    <div className="min-h-screen">
-      <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-slate-200 bg-white md:block">
-        <div className="border-b border-slate-200 p-5">
-          <div className="text-lg font-bold text-coal">Coal TMS</div>
-          <div className="mt-1 text-sm text-slate-500">{user?.name} / {user?.role}</div>
+    <div className="theme-shell">
+      <aside className="app-sidebar fixed top-0 left-0 hidden h-screen w-64 flex-col p-4 md:flex">
+        <div className="mb-6">
+          <div className="text-lg font-bold">Coal TMS</div>
+          <div className="mt-1 text-sm" style={{ color: 'var(--muted)' }}>
+            {user?.name} / {user?.role}
+          </div>
         </div>
-        <nav className="p-3">
+
+        <nav className="flex flex-col gap-1">
           {nav.map((item) => {
             const Icon = item.icon;
+            const active = page === item.key;
             return (
               <button
                 key={item.key}
                 onClick={() => setPage(item.key)}
-                className={`mb-1 flex w-full items-center gap-3 rounded px-3 py-2 text-left ${
-                  page === item.key ? 'bg-teal-50 text-signal' : 'text-slate-700 hover:bg-slate-100'
-                }`}
+                className={`flex items-center gap-3 rounded px-3 py-2 text-left ${active ? 'app-nav-active' : 'app-nav-idle'}`}
               >
                 <Icon size={18} />
                 {item.label}
@@ -43,24 +45,55 @@ export default function Layout({ page, setPage, user, onLogout, children }) {
         </nav>
       </aside>
 
-      <main className="md:pl-64">
-        <header className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur">
-          <div>
-            <div className="text-xs uppercase tracking-normal text-slate-500">Coal Logistics</div>
-            <h1 className="text-xl font-bold capitalize text-coal">{page}</h1>
+      <main className="min-h-screen md:ml-64">
+        <header className="app-header sticky top-0 z-20 px-3 py-3 sm:px-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="text-xs uppercase tracking-normal" style={{ color: 'var(--muted)' }}>
+                Coal Logistics
+              </div>
+              <h1 className="text-lg font-bold capitalize sm:text-xl">{page}</h1>
+            </div>
+
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              <select className="theme-select" value={theme} onChange={(e) => setTheme(e.target.value)} aria-label="Theme">
+                {themes.map((item) => (
+                  <option key={item.id} value={item.id}>{item.label}</option>
+                ))}
+              </select>
+              <button className="btn-muted" onClick={logout}>Logout</button>
+            </div>
           </div>
-          <button className="btn-muted" onClick={logout}>Logout</button>
+
+          <div className="mt-3 flex items-center justify-between rounded border px-3 py-2 md:hidden" style={{ borderColor: 'var(--border)', background: 'color-mix(in srgb, var(--panel) 80%, transparent)' }}>
+            <div className="text-xs uppercase tracking-normal" style={{ color: 'var(--muted)' }}>
+              Signed in
+            </div>
+            <div className="truncate text-sm font-semibold">{user?.name} / {user?.role}</div>
+          </div>
         </header>
-        <div className="flex gap-2 overflow-x-auto border-b border-slate-200 bg-white p-2 md:hidden">
-          {nav.map((item) => (
-            <button key={item.key} onClick={() => setPage(item.key)} className={page === item.key ? 'btn-primary' : 'btn-muted'}>
-              {item.label}
-            </button>
-          ))}
-        </div>
-        <section className="p-4 lg:p-6">{children}</section>
+
+        <section className="page-content p-3 pb-24 sm:p-4 md:pb-6 lg:p-6">
+          {children}
+        </section>
+
+        <nav className="mobile-bottom-nav md:hidden">
+          {nav.map((item) => {
+            const Icon = item.icon;
+            const active = page === item.key;
+            return (
+              <button
+                key={item.key}
+                onClick={() => setPage(item.key)}
+                className={`mobile-nav-btn ${active ? 'app-nav-active' : 'app-nav-idle'}`}
+              >
+                <Icon size={18} />
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
+        </nav>
       </main>
     </div>
   );
 }
-

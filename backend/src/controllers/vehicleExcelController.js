@@ -1,7 +1,8 @@
 import {
   buildVehicleExportWorkbook,
   buildVehicleTemplateWorkbook,
-  importVehiclesFromWorkbook
+  importVehiclesFromWorkbook,
+  previewVehicleWorkbook
 } from '../services/vehicleExcelService.js';
 import { ApiError } from '../utils/apiError.js';
 
@@ -35,6 +36,15 @@ export async function importVehicles(req, res, next) {
     if (!req.file) throw new ApiError(400, 'Upload an Excel .xlsx file');
     const summary = await importVehiclesFromWorkbook(req.file.buffer);
     res.json(summary);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function previewVehicles(req, res, next) {
+  try {
+    if (!req.file) throw new ApiError(400, 'Upload an Excel .xlsx file');
+    res.json(await previewVehicleWorkbook(req.file.buffer));
   } catch (error) {
     next(error);
   }

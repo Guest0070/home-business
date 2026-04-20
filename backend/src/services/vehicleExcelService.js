@@ -27,61 +27,125 @@ function styleSheet(sheet) {
 
 function normaliseText(value) {
   if (value === null || value === undefined) return '';
+  if (typeof value === 'object' && value.text) return String(value.text).trim();
   return String(value).trim();
 }
 
 function parseBoolean(value) {
   const text = normaliseText(value).toLowerCase();
-  if (!text || ['yes', 'true', '1', 'active'].includes(text)) return true;
+  if (!text) return null;
+  if (['yes', 'true', '1', 'active'].includes(text)) return true;
   if (['no', 'false', '0', 'inactive'].includes(text)) return false;
   throw new Error('is_active must be yes/no or true/false');
 }
 
-function readRows(sheet) {
+function buildSummaryRows(sheet) {
   const headerRow = sheet.getRow(1);
   const headerMap = new Map();
   headerRow.eachCell((cell, colNumber) => {
     headerMap.set(normaliseText(cell.value).toLowerCase(), colNumber);
   });
 
-  const missing = ['vehicle_no', 'ownership'].filter((header) => !headerMap.has(header));
+  const missing = ['vehicle_no'].filter((header) => !headerMap.has(header));
   if (missing.length) throw new ApiError(400, `Missing required column(s): ${missing.join(', ')}`);
 
   const rows = [];
   sheet.eachRow((row, rowNumber) => {
     if (rowNumber === 1) return;
     const vehicleNo = normaliseText(row.getCell(headerMap.get('vehicle_no')).value).toUpperCase();
-    const ownership = normaliseText(row.getCell(headerMap.get('ownership')).value).toLowerCase();
-    const ownerName = headerMap.has('owner_name') ? normaliseText(row.getCell(headerMap.get('owner_name')).value) : '';
-    const status = headerMap.has('status') ? normaliseText(row.getCell(headerMap.get('status')).value).toLowerCase() || 'available' : 'available';
-    const isActiveRaw = headerMap.has('is_active') ? row.getCell(headerMap.get('is_active')).value : true;
+    const ownershipText = headerMap.has('ownership') ? normaliseText(row.getCell(headerMap.get('ownership')).value).toLowerCase() : '';
+    const ownerNameText = headerMap.has('owner_name') ? normaliseText(row.getCell(headerMap.get('owner_name')).value) : '';
+    const statusText = headerMap.has('status') ? normaliseText(row.getCell(headerMap.get('status')).value).toLowerCase() : '';
+    const isActiveRaw = headerMap.has('is_active') ? row.getCell(headerMap.get('is_active')).value : '';
 
-    if (!vehicleNo && !ownership && !ownerName) return;
+    if (!vehicleNo && !ownershipText && !ownerNameText && !statusText && !normaliseText(isActiveRaw)) return;
 
-    const errors = [];
-    if (!vehicleNo) errors.push('vehicle_no is required');
-    if (!ownershipValues.has(ownership)) errors.push('ownership must be own or market');
-    if (!statusValues.has(status)) errors.push('status must be available, standby, on_trip, or repair');
-
-    let isActive = true;
-    try {
-      isActive = parseBoolean(isActiveRaw);
-    } catch (error) {
-      errors.push(error.message);
-    }
-
-    rows.push({
+    const rowData = {
       rowNumber,
       vehicle_no: vehicleNo,
-      ownership,
-      owner_name: ownerName || null,
-      status,
-      is_active: isActive,
-      errors
-    });
+      ownership: ownershipText || null,
+      owner_name: ownerNameText || null,
+      status: statusText || null,
+      is_active: null,
+      errors: [],
+      warnings: []
+    };
+
+    if (!vehicleNo) rowData.errors.push('vehicle_no is required');
+    if (rowData.ownership && !ownershipValues.has(rowData.ownership)) {
+      rowData.errors.push('ownership must be own or market');
+    }
+    if (rowData.status && !statusValues.has(rowData.status)) {
+      rowData.errors.push('status must be available, standby, on_trip, or repair');
+    }
+
+    try {
+      rowData.is_active = parseBoolean(isActiveRaw);
+    } catch (error) {
+      rowData.errors.push(error.message);
+    }
+
+    rows.push(rowData);
   });
 
   return rows;
+}
+
+async function enrichRows(rows) {
+  const existing = await query(
+    `SELECT id, vehicle_no, ownership, owner_name, status, is_active
+     FROM vehicles`
+  );
+  const existingMap = new Map(existing.rows.map((row) => [row.vehicle_no.toUpperCase(), row]));
+
+  return rows.map((row) => {
+    const existingRow = existingMap.get(row.vehicle_no);
+    const action = existingRow ? 'update' : 'create';
+    if (!existingRow && !row.ownership) {
+      row.errors.push('ownership is required for new vehicles');
+    }
+
+    return {
+      ...row,
+      action,
+      existing: existingRow ? {
+        ownership: existingRow.ownership,
+        owner_name: existingRow.owner_name,
+        status: existingRow.status,
+        is_active: existingRow.is_active
+      } : null,
+      final: {
+        ownership: row.ownership || existingRow?.ownership || null,
+        owner_name: row.owner_name ?? existingRow?.owner_name ?? null,
+        status: row.status || existingRow?.status || 'available',
+        is_active: row.is_active ?? existingRow?.is_active ?? true
+      }
+    };
+  });
+}
+
+function buildSummary(rows) {
+  return {
+    totalRows: rows.length,
+    creates: rows.filter((row) => row.action === 'create' && row.errors.length === 0).length,
+    updates: rows.filter((row) => row.action === 'update' && row.errors.length === 0).length,
+    failed: rows.filter((row) => row.errors.length > 0).length,
+    rows
+  };
+}
+
+async function loadWorkbookRows(buffer) {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+  const sheet = workbook.getWorksheet('Vehicles') || workbook.worksheets[0];
+  if (!sheet) throw new ApiError(400, 'Workbook has no sheets');
+  return buildSummaryRows(sheet);
+}
+
+export async function previewVehicleWorkbook(buffer) {
+  const rows = await enrichRows(await loadWorkbookRows(buffer));
+  if (rows.length === 0) throw new ApiError(400, 'No vehicle rows found');
+  return buildSummary(rows);
 }
 
 export async function buildVehicleTemplateWorkbook() {
@@ -93,18 +157,19 @@ export async function buildVehicleTemplateWorkbook() {
   styleSheet(sheet);
   sheet.addRows([
     { vehicle_no: 'CG04AB1234', ownership: 'own', owner_name: 'Coal Logistics', status: 'available', is_active: 'yes' },
-    { vehicle_no: 'JH10MK4567', ownership: 'market', owner_name: 'Ramesh Transport', status: 'standby', is_active: 'yes' }
+    { vehicle_no: 'JH10MK4567', ownership: 'market', owner_name: '', status: 'standby', is_active: '' },
+    { vehicle_no: 'OD09TR8899', ownership: 'own', owner_name: '', status: '', is_active: '' }
   ]);
 
   const help = workbook.addWorksheet('Instructions');
-  help.columns = [{ width: 28 }, { width: 70 }];
+  help.columns = [{ width: 28 }, { width: 74 }];
   help.addRows([
     ['Column', 'How to fill'],
-    ['vehicle_no', 'Required. Truck number. Existing truck numbers will be updated.'],
-    ['ownership', 'Required. Use own or market.'],
-    ['owner_name', 'Optional. Truck owner or transporter name.'],
-    ['status', 'Use available, standby, on_trip, or repair. Repair trucks cannot be selected for trips.'],
-    ['is_active', 'Use yes/no or true/false. Blank means yes.']
+    ['vehicle_no', 'Required. Existing truck numbers will be updated.'],
+    ['ownership', 'Required for new trucks. Blank on existing rows means keep current value.'],
+    ['owner_name', 'Optional. Blank means keep current value on updates.'],
+    ['status', 'Optional. Use available, standby, on_trip, or repair. Blank means keep current value on updates.'],
+    ['is_active', 'Optional. Use yes/no or true/false. Blank means keep current value on updates.']
   ]);
   help.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
   help.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF475569' } };
@@ -130,50 +195,37 @@ export async function buildVehicleExportWorkbook() {
 }
 
 export async function importVehiclesFromWorkbook(buffer) {
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(buffer);
-  const sheet = workbook.getWorksheet('Vehicles') || workbook.worksheets[0];
-  if (!sheet) throw new ApiError(400, 'Workbook has no sheets');
-
-  const rows = readRows(sheet);
-  if (rows.length === 0) throw new ApiError(400, 'No vehicle rows found');
-
-  const summary = {
-    totalRows: rows.length,
-    created: 0,
-    updated: 0,
-    failed: 0,
-    errors: []
-  };
-
+  const summary = await previewVehicleWorkbook(buffer);
   await withTransaction(async (client) => {
-    for (const row of rows) {
-      if (row.errors.length) {
-        summary.failed += 1;
-        summary.errors.push({ row: row.rowNumber, vehicle_no: row.vehicle_no, errors: row.errors });
-        continue;
-      }
-
-      const existing = await client.query('SELECT id FROM vehicles WHERE vehicle_no = $1', [row.vehicle_no]);
-      if (existing.rows[0]) {
+    for (const row of summary.rows) {
+      if (row.errors.length) continue;
+      if (row.action === 'update') {
         await client.query(
           `UPDATE vehicles
            SET ownership = $1, owner_name = $2, status = $3, is_active = $4
            WHERE vehicle_no = $5`,
-          [row.ownership, row.owner_name, row.status, row.is_active, row.vehicle_no]
+          [row.final.ownership, row.final.owner_name, row.final.status, row.final.is_active, row.vehicle_no]
         );
-        summary.updated += 1;
       } else {
         await client.query(
           `INSERT INTO vehicles (vehicle_no, ownership, owner_name, status, is_active)
            VALUES ($1,$2,$3,$4,$5)`,
-          [row.vehicle_no, row.ownership, row.owner_name, row.status, row.is_active]
+          [row.vehicle_no, row.final.ownership, row.final.owner_name, row.final.status, row.final.is_active]
         );
-        summary.created += 1;
       }
     }
   });
 
-  return summary;
+  return {
+    totalRows: summary.totalRows,
+    created: summary.creates,
+    updated: summary.updates,
+    failed: summary.failed,
+    errors: summary.rows.filter((row) => row.errors.length).map((row) => ({
+      row: row.rowNumber,
+      vehicle_no: row.vehicle_no,
+      errors: row.errors
+    }))
+  };
 }
 

@@ -54,7 +54,7 @@ export async function createDriver(req, res, next) {
         req.body.phone || null,
         req.body.license_no || null,
         req.body.salary || 0,
-        req.body.per_trip_allowance || 0,
+        0,
         req.body.status || 'available',
         req.body.current_vehicle_id || null,
         req.body.vacation_from || null,
@@ -108,19 +108,18 @@ export async function updateDriver(req, res, next) {
         phone = $2,
         license_no = $3,
         salary = $4,
-        per_trip_allowance = $5,
-        current_vehicle_id = $6,
-        notes = $7,
-        is_active = $8,
+        per_trip_allowance = 0,
+        current_vehicle_id = $5,
+        notes = $6,
+        is_active = $7,
         updated_at = NOW()
-       WHERE id = $9
+       WHERE id = $8
        RETURNING *`,
       [
         req.body.name.trim(),
         req.body.phone || null,
         req.body.license_no || null,
         req.body.salary || 0,
-        req.body.per_trip_allowance || 0,
         req.body.current_vehicle_id || null,
         req.body.notes || null,
         req.body.is_active ?? true,
@@ -133,4 +132,3 @@ export async function updateDriver(req, res, next) {
     next(error);
   }
 }
-

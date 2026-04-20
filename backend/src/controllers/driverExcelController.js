@@ -1,7 +1,8 @@
 import {
   buildDriverExportWorkbook,
   buildDriverTemplateWorkbook,
-  importDriversFromWorkbook
+  importDriversFromWorkbook,
+  previewDriverWorkbook
 } from '../services/driverExcelService.js';
 import { ApiError } from '../utils/apiError.js';
 
@@ -32,6 +33,15 @@ export async function importDrivers(req, res, next) {
   try {
     if (!req.file) throw new ApiError(400, 'Upload an Excel .xlsx file');
     res.json(await importDriversFromWorkbook(req.file.buffer));
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function previewDrivers(req, res, next) {
+  try {
+    if (!req.file) throw new ApiError(400, 'Upload an Excel .xlsx file');
+    res.json(await previewDriverWorkbook(req.file.buffer));
   } catch (error) {
     next(error);
   }

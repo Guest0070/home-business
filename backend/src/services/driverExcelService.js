@@ -7,7 +7,6 @@ const columns = [
   { header: 'phone', key: 'phone', width: 16 },
   { header: 'license_no', key: 'license_no', width: 18 },
   { header: 'salary', key: 'salary', width: 14 },
-  { header: 'per_trip_allowance', key: 'per_trip_allowance', width: 20 },
   { header: 'status', key: 'status', width: 14 },
   { header: 'current_vehicle_no', key: 'current_vehicle_no', width: 20 },
   { header: 'vacation_from', key: 'vacation_from', width: 16 },
@@ -37,9 +36,9 @@ function normaliseText(value) {
   return String(value).trim();
 }
 
-function parseMoney(value, fallback = 0) {
+function parseMoney(value) {
   const text = normaliseText(value);
-  if (!text) return fallback;
+  if (!text) return null;
   const number = Number(text);
   if (!Number.isFinite(number) || number < 0) throw new Error('must be a non-negative number');
   return number;
@@ -47,7 +46,8 @@ function parseMoney(value, fallback = 0) {
 
 function parseBoolean(value) {
   const text = normaliseText(value).toLowerCase();
-  if (!text || ['yes', 'true', '1', 'active'].includes(text)) return true;
+  if (!text) return null;
+  if (['yes', 'true', '1', 'active'].includes(text)) return true;
   if (['no', 'false', '0', 'inactive'].includes(text)) return false;
   throw new Error('is_active must be yes/no or true/false');
 }
@@ -76,24 +76,22 @@ function readRows(sheet) {
     const name = normaliseText(get(row, 'name'));
     const phone = normaliseText(get(row, 'phone'));
     const licenseNo = normaliseText(get(row, 'license_no'));
-    const status = normaliseText(get(row, 'status')).toLowerCase() || 'available';
-    const currentVehicleNo = normaliseText(get(row, 'current_vehicle_no')).toUpperCase();
-    const notes = normaliseText(get(row, 'notes'));
+    const status = normaliseText(get(row, 'status')).toLowerCase() || null;
+    const currentVehicleNo = normaliseText(get(row, 'current_vehicle_no')).toUpperCase() || null;
+    const notes = normaliseText(get(row, 'notes')) || null;
 
-    if (!name && !phone && !licenseNo && !currentVehicleNo) return;
+    if (!name && !phone && !licenseNo && !currentVehicleNo && !notes) return;
 
     const errors = [];
     if (!name) errors.push('name is required');
-    if (!statusValues.has(status)) errors.push('status must be available, on_duty, vacation, or inactive');
+    if (status && !statusValues.has(status)) errors.push('status must be available, on_duty, vacation, or inactive');
 
-    let salary = 0;
-    let perTripAllowance = 0;
+    let salary = null;
     let vacationFrom = null;
     let vacationTo = null;
-    let isActive = true;
+    let isActive = null;
 
     try { salary = parseMoney(get(row, 'salary')); } catch (error) { errors.push(`salary ${error.message}`); }
-    try { perTripAllowance = parseMoney(get(row, 'per_trip_allowance')); } catch (error) { errors.push(`per_trip_allowance ${error.message}`); }
     try { vacationFrom = parseDateText(get(row, 'vacation_from')); } catch (error) { errors.push(`vacation_from ${error.message}`); }
     try { vacationTo = parseDateText(get(row, 'vacation_to')); } catch (error) { errors.push(`vacation_to ${error.message}`); }
     try { isActive = parseBoolean(get(row, 'is_active')); } catch (error) { errors.push(error.message); }
@@ -111,12 +109,11 @@ function readRows(sheet) {
       phone: phone || null,
       license_no: licenseNo || null,
       salary,
-      per_trip_allowance: perTripAllowance,
       status,
-      current_vehicle_no: currentVehicleNo || null,
-      vacation_from: status === 'vacation' ? vacationFrom : null,
-      vacation_to: status === 'vacation' ? vacationTo : null,
-      notes: notes || null,
+      current_vehicle_no: currentVehicleNo,
+      vacation_from: vacationFrom,
+      vacation_to: vacationTo,
+      notes,
       is_active: isActive,
       errors
     });
@@ -125,9 +122,87 @@ function readRows(sheet) {
   return rows;
 }
 
-async function vehicleMap(client) {
-  const result = await client.query('SELECT id, vehicle_no FROM vehicles');
-  return new Map(result.rows.map((row) => [row.vehicle_no.toUpperCase(), row.id]));
+async function enrichRows(rows) {
+  const [drivers, vehicles] = await Promise.all([
+    query(`SELECT id, name, phone, license_no, salary, status, current_vehicle_id, vacation_from, vacation_to, notes, is_active FROM drivers`),
+    query(`SELECT id, vehicle_no FROM vehicles`)
+  ]);
+
+  const vehicleMap = new Map(vehicles.rows.map((row) => [row.vehicle_no.toUpperCase(), row.id]));
+  const driverByLicense = new Map(drivers.rows.filter((row) => row.license_no).map((row) => [row.license_no, row]));
+  const driverByNamePhone = new Map(drivers.rows.map((row) => [`${row.name.toLowerCase()}|${row.phone || ''}`, row]));
+
+  return rows.map((row) => {
+    const existing = row.license_no
+      ? driverByLicense.get(row.license_no)
+      : driverByNamePhone.get(`${row.name.toLowerCase()}|${row.phone || ''}`);
+
+    let vehicleId = null;
+    if (row.current_vehicle_no) {
+      vehicleId = vehicleMap.get(row.current_vehicle_no);
+      if (!vehicleId) row.errors.push(`vehicle ${row.current_vehicle_no} was not found`);
+    }
+
+    const finalStatus = row.status || existing?.status || 'available';
+    const finalVacationFrom = finalStatus === 'vacation' ? (row.vacation_from || existing?.vacation_from || null) : null;
+    const finalVacationTo = finalStatus === 'vacation' ? (row.vacation_to || existing?.vacation_to || null) : null;
+    if (finalStatus === 'vacation' && (!finalVacationFrom || !finalVacationTo)) {
+      row.errors.push('vacation status requires vacation dates');
+    }
+
+    return {
+      ...row,
+      action: existing ? 'update' : 'create',
+      existing: existing ? {
+        name: existing.name,
+        phone: existing.phone,
+        license_no: existing.license_no,
+        salary: existing.salary,
+        status: existing.status,
+        current_vehicle_id: existing.current_vehicle_id,
+        vacation_from: existing.vacation_from,
+        vacation_to: existing.vacation_to,
+        notes: existing.notes,
+        is_active: existing.is_active
+      } : null,
+      final: {
+        name: row.name || existing?.name,
+        phone: row.phone ?? existing?.phone ?? null,
+        license_no: row.license_no ?? existing?.license_no ?? null,
+        salary: row.salary ?? existing?.salary ?? 0,
+        status: finalStatus,
+        current_vehicle_id: vehicleId ?? existing?.current_vehicle_id ?? null,
+        vacation_from: finalVacationFrom,
+        vacation_to: finalVacationTo,
+        notes: row.notes ?? existing?.notes ?? null,
+        is_active: row.is_active ?? existing?.is_active ?? true
+      }
+    };
+  });
+}
+
+function buildSummary(rows) {
+  return {
+    totalRows: rows.length,
+    creates: rows.filter((row) => row.action === 'create' && row.errors.length === 0).length,
+    updates: rows.filter((row) => row.action === 'update' && row.errors.length === 0).length,
+    failed: rows.filter((row) => row.errors.length > 0).length,
+    rows
+  };
+}
+
+async function loadWorkbookRows(buffer) {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+  const sheet = workbook.getWorksheet('Drivers') || workbook.worksheets[0];
+  if (!sheet) throw new ApiError(400, 'Workbook has no sheets');
+  return readRows(sheet);
+}
+
+export async function previewDriverWorkbook(buffer) {
+  const rows = await enrichRows(await loadWorkbookRows(buffer));
+  if (rows.length === 0) throw new ApiError(400, 'No driver rows found');
+  return buildSummary(rows);
 }
 
 export async function buildDriverTemplateWorkbook() {
@@ -143,7 +218,6 @@ export async function buildDriverTemplateWorkbook() {
       phone: '9000000101',
       license_no: 'DL-RJ-1001',
       salary: 22000,
-      per_trip_allowance: 700,
       status: 'available',
       current_vehicle_no: 'CG04AB1234',
       vacation_from: '',
@@ -155,30 +229,29 @@ export async function buildDriverTemplateWorkbook() {
       name: 'Sanjay Yadav',
       phone: '9000000102',
       license_no: 'DL-SY-1002',
-      salary: 21000,
-      per_trip_allowance: 650,
-      status: 'vacation',
+      salary: '',
+      status: '',
       current_vehicle_no: '',
-      vacation_from: '2026-04-20',
-      vacation_to: '2026-04-22',
-      notes: 'Family leave',
-      is_active: 'yes'
+      vacation_from: '',
+      vacation_to: '',
+      notes: '',
+      is_active: ''
     }
   ]);
 
   const help = workbook.addWorksheet('Instructions');
-  help.columns = [{ width: 28 }, { width: 80 }];
+  help.columns = [{ width: 28 }, { width: 86 }];
   help.addRows([
     ['Column', 'How to fill'],
-    ['name', 'Required. Driver full name.'],
-    ['phone', 'Optional. Mobile number.'],
-    ['license_no', 'Optional but recommended. Existing license numbers will be updated.'],
-    ['salary', 'Monthly salary. Number only. Blank means 0.'],
-    ['per_trip_allowance', 'Allowance per trip. Number only. Blank means 0.'],
-    ['status', 'Use available, on_duty, vacation, or inactive.'],
-    ['current_vehicle_no', 'Optional. Must match an existing vehicle_no in the system.'],
-    ['vacation_from / vacation_to', 'Required when status is vacation. Use yyyy-mm-dd.'],
-    ['is_active', 'Use yes/no or true/false. Blank means yes.']
+    ['name', 'Required. Existing drivers can be matched by license_no, otherwise by name + phone.'],
+    ['phone', 'Optional. Blank means keep current value on updates.'],
+    ['license_no', 'Optional but recommended. Blank means keep current value on updates.'],
+    ['salary', 'Optional. Blank means keep current value on updates.'],
+    ['status', 'Optional. Use available, on_duty, vacation, or inactive. Blank means keep current value on updates.'],
+    ['current_vehicle_no', 'Optional. Must match an existing vehicle_no. Blank means keep current assignment on updates.'],
+    ['vacation_from / vacation_to', 'Only needed for vacation rows. Blank means keep current values on updates. Use yyyy-mm-dd.'],
+    ['notes', 'Optional. Blank means keep current value on updates.'],
+    ['is_active', 'Optional. Use yes/no or true/false. Blank means keep current value on updates.']
   ]);
   help.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
   help.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF475569' } };
@@ -188,7 +261,7 @@ export async function buildDriverTemplateWorkbook() {
 
 export async function buildDriverExportWorkbook() {
   const result = await query(
-    `SELECT d.name, d.phone, d.license_no, d.salary, d.per_trip_allowance,
+    `SELECT d.name, d.phone, d.license_no, d.salary,
       d.status, v.vehicle_no AS current_vehicle_no, d.vacation_from, d.vacation_to,
       d.notes, d.is_active
      FROM drivers d
@@ -207,91 +280,69 @@ export async function buildDriverExportWorkbook() {
 }
 
 export async function importDriversFromWorkbook(buffer) {
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(buffer);
-  const sheet = workbook.getWorksheet('Drivers') || workbook.worksheets[0];
-  if (!sheet) throw new ApiError(400, 'Workbook has no sheets');
-
-  const rows = readRows(sheet);
-  if (rows.length === 0) throw new ApiError(400, 'No driver rows found');
-
-  const summary = {
-    totalRows: rows.length,
-    created: 0,
-    updated: 0,
-    failed: 0,
-    errors: []
-  };
-
+  const summary = await previewDriverWorkbook(buffer);
   await withTransaction(async (client) => {
-    const vehicles = await vehicleMap(client);
-
-    for (const row of rows) {
-      let vehicleId = null;
-      if (row.current_vehicle_no) {
-        vehicleId = vehicles.get(row.current_vehicle_no);
-        if (!vehicleId) row.errors.push(`vehicle ${row.current_vehicle_no} was not found`);
-      }
-
-      if (row.errors.length) {
-        summary.failed += 1;
-        summary.errors.push({ row: row.rowNumber, name: row.name, errors: row.errors });
-        continue;
-      }
-
-      const existing = row.license_no
-        ? await client.query('SELECT id FROM drivers WHERE license_no = $1', [row.license_no])
-        : await client.query('SELECT id FROM drivers WHERE LOWER(name) = LOWER($1) AND COALESCE(phone, \'\') = COALESCE($2, \'\')', [row.name, row.phone]);
-
-      if (existing.rows[0]) {
+    for (const row of summary.rows) {
+      if (row.errors.length) continue;
+      if (row.action === 'update') {
+        const existing = row.existing;
+        const existingResult = row.license_no
+          ? await client.query('SELECT id FROM drivers WHERE license_no = $1', [row.final.license_no || row.license_no || existing.license_no])
+          : await client.query('SELECT id FROM drivers WHERE LOWER(name) = LOWER($1) AND COALESCE(phone, \'\') = COALESCE($2, \'\')', [existing.name, existing.phone]);
         await client.query(
           `UPDATE drivers
-           SET name = $1, phone = $2, license_no = $3, salary = $4, per_trip_allowance = $5,
-            status = $6, current_vehicle_id = $7, vacation_from = $8, vacation_to = $9,
-            notes = $10, is_active = $11, updated_at = NOW()
-           WHERE id = $12`,
+           SET name = $1, phone = $2, license_no = $3, salary = $4,
+            status = $5, current_vehicle_id = $6, vacation_from = $7, vacation_to = $8,
+            notes = $9, is_active = $10, updated_at = NOW()
+           WHERE id = $11`,
           [
-            row.name,
-            row.phone,
-            row.license_no,
-            row.salary,
-            row.per_trip_allowance,
-            row.status,
-            vehicleId,
-            row.vacation_from,
-            row.vacation_to,
-            row.notes,
-            row.is_active,
-            existing.rows[0].id
+            row.final.name,
+            row.final.phone,
+            row.final.license_no,
+            row.final.salary,
+            row.final.status,
+            row.final.current_vehicle_id,
+            row.final.vacation_from,
+            row.final.vacation_to,
+            row.final.notes,
+            row.final.is_active,
+            existingResult.rows[0].id
           ]
         );
-        summary.updated += 1;
       } else {
         await client.query(
           `INSERT INTO drivers (
             name, phone, license_no, salary, per_trip_allowance, status,
             current_vehicle_id, vacation_from, vacation_to, notes, is_active
           )
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+          VALUES ($1,$2,$3,$4,0,$5,$6,$7,$8,$9,$10)`,
           [
-            row.name,
-            row.phone,
-            row.license_no,
-            row.salary,
-            row.per_trip_allowance,
-            row.status,
-            vehicleId,
-            row.vacation_from,
-            row.vacation_to,
-            row.notes,
-            row.is_active
+            row.final.name,
+            row.final.phone,
+            row.final.license_no,
+            row.final.salary,
+            row.final.status,
+            row.final.current_vehicle_id,
+            row.final.vacation_from,
+            row.final.vacation_to,
+            row.final.notes,
+            row.final.is_active
           ]
         );
-        summary.created += 1;
       }
     }
   });
 
-  return summary;
+  return {
+    totalRows: summary.totalRows,
+    created: summary.creates,
+    updated: summary.updates,
+    failed: summary.failed,
+    errors: summary.rows.filter((row) => row.errors.length).map((row) => ({
+      row: row.rowNumber,
+      name: row.name,
+      errors: row.errors
+    }))
+  };
 }
 

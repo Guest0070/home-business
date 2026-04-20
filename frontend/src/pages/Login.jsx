@@ -23,7 +23,7 @@ export default function Login({ onLogin }) {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-100 p-4">
-      <form onSubmit={submit} className="panel w-full max-w-md p-6">
+      <form onSubmit={submit} className="glass glass-card w-full max-w-md p-6">
         <h1 className="text-2xl font-bold text-coal">Coal TMS Login</h1>
         <p className="mt-2 text-sm text-slate-600">Manage trips, expenses, payments, and profit from one place.</p>
         {error && <div className="mt-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}

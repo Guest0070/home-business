@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
-import { downloadVehicleTemplate, exportVehicles, importVehicles } from '../controllers/vehicleExcelController.js';
+import { downloadVehicleTemplate, exportVehicles, importVehicles, previewVehicles } from '../controllers/vehicleExcelController.js';
 import { authorize } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { createMaster, listMaster, updateVehicleStatus } from '../controllers/masterController.js';
@@ -62,6 +62,7 @@ export const vehicleRoutes = Router()
   .get('/', listMaster('vehicles'))
   .get('/template', authorize('admin', 'company'), downloadVehicleTemplate)
   .get('/export', authorize('admin', 'company'), exportVehicles)
+  .post('/import/preview', authorize('admin', 'company'), upload.single('file'), previewVehicles)
   .post('/import', authorize('admin', 'company'), upload.single('file'), importVehicles)
   .post('/', authorize('admin', 'company'), validate(vehicleSchema), createMaster('vehicles'))
   .patch('/:id/status', authorize('admin', 'company'), validate(vehicleStatusSchema), updateVehicleStatus);

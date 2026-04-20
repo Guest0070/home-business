@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { api, getToken } from '../api/client.js';
+import { api, getApiBaseUrl, getToken } from '../api/client.js';
+import ImportReview from '../components/ImportReview.jsx';
 import DataTable from '../components/DataTable.jsx';
 import MetricCard from '../components/MetricCard.jsx';
+import SearchableSelect from '../components/SearchableSelect.jsx';
 
 const today = new Date().toISOString().slice(0, 10);
 const money = (value) => `Rs ${Number(value || 0).toLocaleString('en-IN')}`;
@@ -10,20 +12,23 @@ function statusClass(status) {
   if (status === 'available') return 'bg-emerald-50 text-emerald-700';
   if (status === 'on_duty') return 'bg-sky-50 text-sky-700';
   if (status === 'vacation') return 'bg-amber-50 text-amber-700';
-  return 'bg-slate-100 text-slate-700';
+  return 'bg-slate-100 text-white';
 }
 
 export default function Drivers() {
   const [drivers, setDrivers] = useState([]);
   const [vehicles, setVehicles] = useState([]);
+  const [dutyVehicleSelections, setDutyVehicleSelections] = useState({});
   const [error, setError] = useState('');
   const [importSummary, setImportSummary] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [pendingFile, setPendingFile] = useState(null);
+  const [importing, setImporting] = useState(false);
   const [form, setForm] = useState({
     name: '',
     phone: '',
     license_no: '',
     salary: '',
-    per_trip_allowance: '',
     current_vehicle_id: ''
   });
 
@@ -41,6 +46,9 @@ export default function Drivers() {
     ]);
     setDrivers(driverRows);
     setVehicles(vehicleRows);
+    setDutyVehicleSelections(
+      Object.fromEntries(driverRows.map((driver) => [driver.id, driver.current_vehicle_id || '']))
+    );
   }
 
   useEffect(() => {
@@ -52,7 +60,7 @@ export default function Drivers() {
     setError('');
     try {
       await api('/drivers', { method: 'POST', body: form });
-      setForm({ name: '', phone: '', license_no: '', salary: '', per_trip_allowance: '', current_vehicle_id: '' });
+      setForm({ name: '', phone: '', license_no: '', salary: '', current_vehicle_id: '' });
       await load();
     } catch (err) {
       setError(err.message);
@@ -77,7 +85,7 @@ export default function Drivers() {
 
   async function assignDuty(event, driver) {
     event.preventDefault();
-    const vehicleId = event.currentTarget.elements.current_vehicle_id.value;
+    const vehicleId = dutyVehicleSelections[driver.id] || '';
     if (!vehicleId) {
       setError('Select a vehicle before assigning duty');
       return;
@@ -113,7 +121,7 @@ export default function Drivers() {
   async function downloadFile(path, filename) {
     setError('');
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000/api'}${path}`, {
+      const response = await fetch(`${getApiBaseUrl()}${path}`, {
         headers: { Authorization: `Bearer ${getToken()}` }
       });
       if (!response.ok) throw new Error('Download failed');
@@ -131,15 +139,40 @@ export default function Drivers() {
     }
   }
 
-  async function uploadExcel(event) {
+  async function reviewExcel(event) {
     const file = event.target.files?.[0];
     if (!file) return;
     setError('');
     setImportSummary(null);
+    setPreview(null);
+    setPendingFile(file);
     const formData = new FormData();
     formData.append('file', file);
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000/api'}/drivers/import`, {
+      const response = await fetch(`${getApiBaseUrl()}/drivers/import/preview`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${getToken()}` },
+        body: formData
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.message || 'Preview failed');
+      setPreview(data);
+    } catch (err) {
+      setError(err.message);
+      setPendingFile(null);
+    } finally {
+      event.target.value = '';
+    }
+  }
+
+  async function confirmImport() {
+    if (!pendingFile) return;
+    setImporting(true);
+    setError('');
+    const formData = new FormData();
+    formData.append('file', pendingFile);
+    try {
+      const response = await fetch(`${getApiBaseUrl()}/drivers/import`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${getToken()}` },
         body: formData
@@ -147,11 +180,13 @@ export default function Drivers() {
       const data = await response.json();
       if (!response.ok) throw new Error(data?.message || 'Import failed');
       setImportSummary(data);
+      setPreview(null);
+      setPendingFile(null);
       await load();
     } catch (err) {
       setError(err.message);
     } finally {
-      event.target.value = '';
+      setImporting(false);
     }
   }
 
@@ -177,36 +212,38 @@ export default function Drivers() {
           )}
         </div>
       )}
+      <ImportReview title="Driver Import Review" preview={preview} keyField="name" onConfirm={confirmImport} busy={importing} />
 
       <div className="grid gap-4 xl:grid-cols-[380px_1fr]">
         <div className="space-y-4">
-          <form onSubmit={submit} className="panel space-y-3 p-4">
+          <form onSubmit={submit} className="glass glass-card space-y-3 p-4">
             <h2 className="text-lg font-bold">Add Driver</h2>
             <div><label>Name</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></div>
             <div><label>Phone</label><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
             <div><label>License Number</label><input value={form.license_no} onChange={(e) => setForm({ ...form, license_no: e.target.value })} /></div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div><label>Salary</label><input type="number" step="0.01" value={form.salary} onChange={(e) => setForm({ ...form, salary: e.target.value })} /></div>
-              <div><label>Per Trip Allowance</label><input type="number" step="0.01" value={form.per_trip_allowance} onChange={(e) => setForm({ ...form, per_trip_allowance: e.target.value })} /></div>
-            </div>
+            <div><label>Salary</label><input type="number" step="0.01" value={form.salary} onChange={(e) => setForm({ ...form, salary: e.target.value })} /></div>
             <div>
               <label>Default Vehicle</label>
-              <select value={form.current_vehicle_id} onChange={(e) => setForm({ ...form, current_vehicle_id: e.target.value })}>
-                <option value="">No fixed vehicle</option>
-                {vehicles.map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.vehicle_no}</option>)}
-              </select>
+              <SearchableSelect
+                id="driver-default-vehicle-options"
+                value={form.current_vehicle_id}
+                options={vehicles}
+                onChange={(vehicleId) => setForm({ ...form, current_vehicle_id: vehicleId })}
+                placeholder="Type vehicle number"
+                getOptionLabel={(vehicle) => vehicle.vehicle_no}
+              />
             </div>
             <button className="btn-primary w-full">Save Driver</button>
           </form>
 
-          <section className="panel space-y-3 p-4">
+          <section className="glass glass-card space-y-3 p-4">
             <h2 className="text-lg font-bold">Excel Import</h2>
-            <p className="text-sm text-slate-600">Add or update drivers in bulk. Use license number to update existing drivers.</p>
+            <p className="text-sm text-slate-600">Add or update drivers in bulk. Leave optional cells blank to keep existing values on update.</p>
             <button className="btn-muted w-full" onClick={() => downloadFile('/drivers/template', 'driver-import-template.xlsx')}>Download Template</button>
             <button className="btn-muted w-full" onClick={() => downloadFile('/drivers/export', 'drivers-export.xlsx')}>Export Drivers</button>
             <label className="block">
-              Upload Driver Excel
-              <input className="mt-1" type="file" accept=".xlsx" onChange={uploadExcel} />
+              Review Driver Excel
+              <input className="mt-1" type="file" accept=".xlsx" onChange={reviewExcel} />
             </label>
           </section>
         </div>
@@ -220,7 +257,6 @@ export default function Drivers() {
             { key: 'status', label: 'Status', render: (row) => <span className={`rounded px-2 py-1 text-xs font-semibold ${statusClass(row.status)}`}>{row.status.replace('_', ' ')}</span> },
             { key: 'current_vehicle_no', label: 'Vehicle' },
             { key: 'salary', label: 'Salary', render: (row) => money(row.salary) },
-            { key: 'per_trip_allowance', label: 'Allowance', render: (row) => money(row.per_trip_allowance) },
             { key: 'total_trips', label: 'Trips' },
             { key: 'total_profit', label: 'Profit', render: (row) => money(row.total_profit) }
           ]}
@@ -229,11 +265,11 @@ export default function Drivers() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         {drivers.map((driver) => (
-          <section key={driver.id} className="panel p-4">
+          <section key={driver.id} className="glass glass-card p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h3 className="font-bold text-coal">{driver.name}</h3>
-                <p className="text-sm text-slate-500">{driver.phone || 'No phone'} / {driver.current_vehicle_no || 'No vehicle assigned'}</p>
+                <p className="text-sm text-white/70">{driver.phone || 'No phone'} / {driver.current_vehicle_no || 'No vehicle assigned'}</p>
               </div>
               <span className={`rounded px-2 py-1 text-xs font-semibold ${statusClass(driver.status)}`}>{driver.status.replace('_', ' ')}</span>
             </div>
@@ -241,10 +277,14 @@ export default function Drivers() {
             <div className="mt-4 grid gap-3 xl:grid-cols-2">
               <form onSubmit={(event) => assignDuty(event, driver)} className="space-y-2">
                 <label>Assign Duty</label>
-                <select name="current_vehicle_id" defaultValue={driver.current_vehicle_id || ''}>
-                  <option value="">Select vehicle</option>
-                  {vehicles.map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.vehicle_no}</option>)}
-                </select>
+                <SearchableSelect
+                  id={`driver-duty-vehicle-options-${driver.id}`}
+                  value={dutyVehicleSelections[driver.id] || ''}
+                  options={vehicles}
+                  onChange={(vehicleId) => setDutyVehicleSelections((current) => ({ ...current, [driver.id]: vehicleId }))}
+                  placeholder="Type vehicle number"
+                  getOptionLabel={(vehicle) => vehicle.vehicle_no}
+                />
                 <button className="btn-primary w-full">Mark On Duty</button>
               </form>
 

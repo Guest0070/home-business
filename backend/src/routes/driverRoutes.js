@@ -2,7 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
 import { createDriver, listDrivers, updateDriver, updateDriverStatus } from '../controllers/driverController.js';
-import { downloadDriverTemplate, exportDrivers, importDrivers } from '../controllers/driverExcelController.js';
+import { downloadDriverTemplate, exportDrivers, importDrivers, previewDrivers } from '../controllers/driverExcelController.js';
 import { authorize } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 
@@ -24,7 +24,6 @@ const driverBody = z.object({
   phone: z.string().max(40).optional(),
   license_no: z.string().max(80).optional(),
   salary: z.coerce.number().nonnegative().optional(),
-  per_trip_allowance: z.coerce.number().nonnegative().optional(),
   status: z.enum(['available', 'on_duty', 'vacation', 'inactive']).optional(),
   current_vehicle_id: z.string().uuid().optional().or(z.literal('')),
   vacation_from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -69,6 +68,7 @@ const listSchema = z.object({
 router.get('/', validate(listSchema), listDrivers);
 router.get('/template', authorize('admin', 'company'), downloadDriverTemplate);
 router.get('/export', authorize('admin', 'company'), exportDrivers);
+router.post('/import/preview', authorize('admin', 'company'), upload.single('file'), previewDrivers);
 router.post('/import', authorize('admin', 'company'), upload.single('file'), importDrivers);
 router.post('/', authorize('admin', 'company'), validate(createSchema), createDriver);
 router.put('/:id', authorize('admin', 'company'), validate(updateSchema), updateDriver);

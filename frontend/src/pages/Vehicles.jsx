@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { api, getToken } from '../api/client.js';
+import { api, getApiBaseUrl, getToken } from '../api/client.js';
+import ImportReview from '../components/ImportReview.jsx';
 import DataTable from '../components/DataTable.jsx';
 import MetricCard from '../components/MetricCard.jsx';
 
@@ -14,6 +15,9 @@ export default function Vehicles() {
   const [vehicles, setVehicles] = useState([]);
   const [error, setError] = useState('');
   const [importSummary, setImportSummary] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [pendingFile, setPendingFile] = useState(null);
+  const [importing, setImporting] = useState(false);
   const [form, setForm] = useState({ vehicle_no: '', ownership: 'own', owner_name: '', status: 'available' });
 
   const counts = useMemo(() => ({
@@ -54,7 +58,7 @@ export default function Vehicles() {
   async function downloadFile(path, filename) {
     setError('');
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000/api'}${path}`, {
+      const response = await fetch(`${getApiBaseUrl()}${path}`, {
         headers: { Authorization: `Bearer ${getToken()}` }
       });
       if (!response.ok) throw new Error('Download failed');
@@ -72,15 +76,40 @@ export default function Vehicles() {
     }
   }
 
-  async function uploadExcel(event) {
+  async function reviewExcel(event) {
     const file = event.target.files?.[0];
     if (!file) return;
     setError('');
     setImportSummary(null);
+    setPreview(null);
+    setPendingFile(file);
     const formData = new FormData();
     formData.append('file', file);
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000/api'}/vehicles/import`, {
+      const response = await fetch(`${getApiBaseUrl()}/vehicles/import/preview`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${getToken()}` },
+        body: formData
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.message || 'Preview failed');
+      setPreview(data);
+    } catch (err) {
+      setError(err.message);
+      setPendingFile(null);
+    } finally {
+      event.target.value = '';
+    }
+  }
+
+  async function confirmImport() {
+    if (!pendingFile) return;
+    setImporting(true);
+    setError('');
+    const formData = new FormData();
+    formData.append('file', pendingFile);
+    try {
+      const response = await fetch(`${getApiBaseUrl()}/vehicles/import`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${getToken()}` },
         body: formData
@@ -88,11 +117,13 @@ export default function Vehicles() {
       const data = await response.json();
       if (!response.ok) throw new Error(data?.message || 'Import failed');
       setImportSummary(data);
+      setPreview(null);
+      setPendingFile(null);
       await load();
     } catch (err) {
       setError(err.message);
     } finally {
-      event.target.value = '';
+      setImporting(false);
     }
   }
 
@@ -118,10 +149,11 @@ export default function Vehicles() {
           )}
         </div>
       )}
+      <ImportReview title="Vehicle Import Review" preview={preview} keyField="vehicle_no" onConfirm={confirmImport} busy={importing} />
 
       <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
         <div className="space-y-4">
-          <form onSubmit={submit} className="panel space-y-3 p-4">
+          <form onSubmit={submit} className="glass glass-card space-y-3 p-4">
             <h2 className="text-lg font-bold">Add Vehicle</h2>
             <div><label>Vehicle Number</label><input value={form.vehicle_no} onChange={(e) => setForm({ ...form, vehicle_no: e.target.value.toUpperCase() })} required /></div>
             <div><label>Ownership</label><select value={form.ownership} onChange={(e) => setForm({ ...form, ownership: e.target.value })}><option value="own">Own</option><option value="market">Market</option></select></div>
@@ -130,14 +162,14 @@ export default function Vehicles() {
             <button className="btn-primary w-full">Save Vehicle</button>
           </form>
 
-          <section className="panel space-y-3 p-4">
+          <section className="glass glass-card space-y-3 p-4">
             <h2 className="text-lg font-bold">Excel Import</h2>
             <p className="text-sm text-slate-600">Use Excel to add or update many trucks at once. Existing vehicle numbers are updated.</p>
             <button className="btn-muted w-full" onClick={() => downloadFile('/vehicles/template', 'vehicle-import-template.xlsx')}>Download Template</button>
             <button className="btn-muted w-full" onClick={() => downloadFile('/vehicles/export', 'vehicles-export.xlsx')}>Export Vehicles</button>
             <label className="block">
-              Upload Vehicle Excel
-              <input className="mt-1" type="file" accept=".xlsx" onChange={uploadExcel} />
+              Review Vehicle Excel
+              <input className="mt-1" type="file" accept=".xlsx" onChange={reviewExcel} />
             </label>
           </section>
         </div>

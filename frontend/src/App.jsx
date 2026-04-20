@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, getToken } from './api/client.js';
 import Layout from './components/Layout.jsx';
+import { defaultTheme, themes } from './theme.js';
 import Dashboard from './pages/Dashboard.jsx';
 import Drivers from './pages/Drivers.jsx';
 import Login from './pages/Login.jsx';
@@ -24,6 +25,12 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [page, setPage] = useState('dashboard');
   const [loading, setLoading] = useState(Boolean(getToken()));
+  const [theme, setTheme] = useState(localStorage.getItem('tms_theme') || defaultTheme);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('tms_theme', theme);
+  }, [theme]);
 
   useEffect(() => {
     if (!getToken()) return;
@@ -39,7 +46,15 @@ export default function App() {
   const Page = pages[page] || Dashboard;
 
   return (
-    <Layout page={page} setPage={setPage} user={user} onLogout={() => setUser(null)}>
+    <Layout
+      page={page}
+      setPage={setPage}
+      user={user}
+      onLogout={() => setUser(null)}
+      theme={theme}
+      setTheme={setTheme}
+      themes={themes}
+    >
       <Page />
     </Layout>
   );

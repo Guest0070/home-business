@@ -52,6 +52,18 @@ If native PostgreSQL has already been initialized for this project, start everyt
 .\scripts\start-dev.ps1
 ```
 
+Start for your whole local network:
+
+```powershell
+.\scripts\start-network.ps1
+```
+
+Stop everything:
+
+```powershell
+.\scripts\stop-dev.ps1
+```
+
 Stop the local PostgreSQL server with:
 
 ```powershell
@@ -138,6 +150,10 @@ Default login after seeding:
 
 - Email: `admin@coal-tms.local`
 - Password: `Admin@12345`
+
+Daily operating guide:
+
+[HOW-TO-RUN.md](C:/Users/divya/Documents/Codex/2026-04-19-i-want-you-to-act-as/tms-coal-logistics/HOW-TO-RUN.md)
 
 ## Core Business Logic
 

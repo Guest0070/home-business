@@ -1,4 +1,17 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
+function resolveApiUrl() {
+  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
+  if (typeof window !== 'undefined') {
+    const { protocol, hostname } = window.location;
+    return `${protocol}//${hostname}:4000/api`;
+  }
+  return 'http://localhost:4000/api';
+}
+
+const API_URL = resolveApiUrl();
+
+export function getApiBaseUrl() {
+  return API_URL;
+}
 
 export function getToken() {
   return localStorage.getItem('tms_token');
@@ -33,4 +46,3 @@ export async function api(path, options = {}) {
 
   return data;
 }
-
