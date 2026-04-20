@@ -7,6 +7,4 @@ if (!(Test-Path $Node)) {
 
 & $Node (Join-Path $PSScriptRoot 'stop-app.mjs') | Out-Null
 
-& (Join-Path $PSScriptRoot 'stop-postgres.ps1')
-
-Write-Host 'Coal TMS stopped.'
+Write-Host 'Hosted backend stopped.'

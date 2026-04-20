@@ -1,14 +1,17 @@
-import { BarChart3, CreditCard, IdCard, Map, Route, Truck, WalletCards } from 'lucide-react';
+import { BarChart3, CreditCard, FileText, IdCard, LocateFixed, Map, Route, Truck, UserCog, WalletCards } from 'lucide-react';
 import { setToken } from '../api/client.js';
 
-const nav = [
+export const navItems = [
   { key: 'dashboard', label: 'Dashboard', icon: BarChart3 },
+  { key: 'delivery-orders', label: 'D.O.', icon: FileText },
+  { key: 'gps', label: 'GPS', icon: LocateFixed },
   { key: 'trips', label: 'Trips', icon: Route },
   { key: 'drivers', label: 'Drivers', icon: IdCard },
   { key: 'vehicles', label: 'Vehicles', icon: Truck },
   { key: 'routes', label: 'Routes', icon: Map },
   { key: 'payments', label: 'Payments', icon: CreditCard },
-  { key: 'reports', label: 'Reports', icon: WalletCards }
+  { key: 'reports', label: 'Reports', icon: WalletCards },
+  { key: 'users', label: 'Users', icon: UserCog, roles: ['admin'] }
 ];
 
 export default function Layout({ page, setPage, user, onLogout, children, theme, setTheme, themes }) {
@@ -16,6 +19,9 @@ export default function Layout({ page, setPage, user, onLogout, children, theme,
     setToken(null);
     onLogout();
   }
+
+  const visibleNav = navItems.filter((item) => !item.roles || item.roles.includes(user?.role));
+  const currentPage = visibleNav.find((item) => item.key === page) || navItems.find((item) => item.key === page);
 
   return (
     <div className="theme-shell">
@@ -28,7 +34,7 @@ export default function Layout({ page, setPage, user, onLogout, children, theme,
         </div>
 
         <nav className="flex flex-col gap-1">
-          {nav.map((item) => {
+          {visibleNav.map((item) => {
             const Icon = item.icon;
             const active = page === item.key;
             return (
@@ -52,7 +58,7 @@ export default function Layout({ page, setPage, user, onLogout, children, theme,
               <div className="text-xs uppercase tracking-normal" style={{ color: 'var(--muted)' }}>
                 Coal Logistics
               </div>
-              <h1 className="text-lg font-bold capitalize sm:text-xl">{page}</h1>
+              <h1 className="text-lg font-bold sm:text-xl">{currentPage?.label || page}</h1>
             </div>
 
             <div className="flex items-center gap-2 self-start sm:self-auto">
@@ -78,7 +84,7 @@ export default function Layout({ page, setPage, user, onLogout, children, theme,
         </section>
 
         <nav className="mobile-bottom-nav md:hidden">
-          {nav.map((item) => {
+          {visibleNav.map((item) => {
             const Icon = item.icon;
             const active = page === item.key;
             return (

@@ -34,6 +34,38 @@ If another device cannot connect:
 2. Allow ports `5173` and `4000` in Windows Firewall.
 3. Keep this laptop awake while using the app.
 
+## Start In Hosted Mode
+
+Hosted mode gives you a single URL and is the easiest path for future deployment because the backend serves the frontend too.
+
+```powershell
+.\scripts\start-hosted.ps1
+```
+
+Open:
+
+- `http://127.0.0.1:4000`
+- `http://YOUR-LAPTOP-IP:4000`
+
+Stop:
+
+```powershell
+.\scripts\stop-hosted.ps1
+```
+
+## Linux Or Other Unix-Like Systems
+
+If you are running on Linux:
+
+```bash
+./scripts/start-dev.sh
+./scripts/stop-dev.sh
+./scripts/start-hosted.sh
+./scripts/stop-hosted.sh
+```
+
+These scripts assume Node.js and PostgreSQL are already installed and configured.
+
 ## Stop Everything
 
 ```powershell
@@ -109,4 +141,17 @@ Steps:
 - Driver allowance is not stored per driver. Allowance is entered per trip.
 - Repair trucks cannot be used for new trips.
 - Vacation/inactive drivers cannot be assigned to new trips.
+- Delivery orders can be created first, then linked to trips as deliveries happen.
+- In trip entry, typing a new driver name creates that driver automatically when the trip is saved.
+- In payments, selecting a D.O. fills the party automatically.
+- The GPS page supports WheelsEye portal mode now. Live API mode can be switched on later if WheelsEye gives enterprise API details.
 
+## Future Hosting
+
+When you later move this to a server or domain, use:
+
+[DEPLOYMENT.md](C:/Users/divya/Documents/Codex/2026-04-19-i-want-you-to-act-as/tms-coal-logistics/DEPLOYMENT.md)
+
+If you want to expose directly from your own PC to the public internet, use:
+
+[PUBLIC-HOSTING.md](C:/Users/divya/Documents/Codex/2026-04-19-i-want-you-to-act-as/tms-coal-logistics/PUBLIC-HOSTING.md)

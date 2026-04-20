@@ -8,7 +8,8 @@
     "db:seed": "node scripts/apply-sql.js db/seed.sql",
     "db:setup": "node scripts/apply-sql.js db/schema.sql db/seed.sql",
     "dev": "nodemon src/server.js",
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "start:hosted": "node src/server.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

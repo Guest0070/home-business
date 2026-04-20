@@ -55,7 +55,7 @@ function MoneyTooltip({ active, payload, label }) {
   );
 }
 
-export default function Dashboard() {
+export default function Dashboard({ user }) {
   const [data, setData] = useState(null);
   const [charts, setCharts] = useState({
     dailyTrend: [],
@@ -63,11 +63,31 @@ export default function Dashboard() {
     driverRanking: [],
     partyLedger: []
   });
+  const [userForm, setUserForm] = useState({
+    name: '',
+    email: '',
+    password: '',
+    role: 'user',
+    companyName: ''
+  });
+  const [userMessage, setUserMessage] = useState('');
 
   useEffect(() => {
     api('/dashboard').then(setData).catch(console.error);
     api('/dashboard/charts').then(setCharts).catch(console.error);
   }, []);
+
+  async function createUser(event) {
+    event.preventDefault();
+    setUserMessage('');
+    try {
+      await api('/users', { method: 'POST', body: userForm });
+      setUserForm({ name: '', email: '', password: '', role: 'user', companyName: '' });
+      setUserMessage('User created successfully.');
+    } catch (error) {
+      setUserMessage(error.message);
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -130,6 +150,30 @@ export default function Dashboard() {
           </ResponsiveContainer>
         </ChartPanel>
       </div>
+
+      {user?.role === 'admin' && (
+        <section className="glass glass-card p-4">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h2 className="text-base font-bold" style={{ color: chartStyle.title }}>Quick User Creation</h2>
+            <div className="text-sm" style={{ color: chartStyle.text }}>Admin only</div>
+          </div>
+          {userMessage && <div className="mb-3 rounded border border-slate-200 px-3 py-2 text-sm">{userMessage}</div>}
+          <form onSubmit={createUser} className="grid gap-3 md:grid-cols-5">
+            <input placeholder="Name" value={userForm.name} onChange={(e) => setUserForm({ ...userForm, name: e.target.value })} required />
+            <input placeholder="Email" type="email" value={userForm.email} onChange={(e) => setUserForm({ ...userForm, email: e.target.value })} required />
+            <input placeholder="Password" type="password" value={userForm.password} onChange={(e) => setUserForm({ ...userForm, password: e.target.value })} required />
+            <select value={userForm.role} onChange={(e) => setUserForm({ ...userForm, role: e.target.value })}>
+              <option value="user">User</option>
+              <option value="company">Company</option>
+              <option value="admin">Admin</option>
+            </select>
+            <input placeholder="Company Name" value={userForm.companyName} onChange={(e) => setUserForm({ ...userForm, companyName: e.target.value })} />
+            <div className="md:col-span-5">
+              <button className="btn-primary">Create User</button>
+            </div>
+          </form>
+        </section>
+      )}
     </div>
   );
 }

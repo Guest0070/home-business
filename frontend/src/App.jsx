@@ -1,25 +1,30 @@
-import { useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { api, getToken } from './api/client.js';
 import Layout from './components/Layout.jsx';
 import { defaultTheme, themes } from './theme.js';
-import Dashboard from './pages/Dashboard.jsx';
-import Drivers from './pages/Drivers.jsx';
+import { navItems } from './components/Layout.jsx';
 import Login from './pages/Login.jsx';
-import Payments from './pages/Payments.jsx';
-import Reports from './pages/Reports.jsx';
-import Routes from './pages/Routes.jsx';
-import Trips from './pages/Trips.jsx';
-import Vehicles from './pages/Vehicles.jsx';
 
 const pages = {
-  dashboard: Dashboard,
-  trips: Trips,
-  drivers: Drivers,
-  vehicles: Vehicles,
-  routes: Routes,
-  payments: Payments,
-  reports: Reports
+  dashboard: lazy(() => import('./pages/Dashboard.jsx')),
+  'delivery-orders': lazy(() => import('./pages/DeliveryOrders.jsx')),
+  gps: lazy(() => import('./pages/GpsTracking.jsx')),
+  trips: lazy(() => import('./pages/Trips.jsx')),
+  drivers: lazy(() => import('./pages/Drivers.jsx')),
+  vehicles: lazy(() => import('./pages/Vehicles.jsx')),
+  routes: lazy(() => import('./pages/Routes.jsx')),
+  payments: lazy(() => import('./pages/Payments.jsx')),
+  reports: lazy(() => import('./pages/Reports.jsx')),
+  users: lazy(() => import('./pages/Users.jsx'))
 };
+
+function PageFallback({ label }) {
+  return (
+    <div className="glass glass-card p-6">
+      <div className="text-sm font-semibold text-slate-600">Loading {label}...</div>
+    </div>
+  );
+}
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -43,7 +48,9 @@ export default function App() {
   if (loading) return <div className="p-6 text-slate-600">Loading...</div>;
   if (!user) return <Login onLogin={setUser} />;
 
-  const Page = pages[page] || Dashboard;
+  const Page = pages[page] || pages.dashboard;
+  const currentNav = navItems.find((item) => item.key === page);
+  const pageLabel = currentNav?.label || 'Dashboard';
 
   return (
     <Layout
@@ -55,7 +62,9 @@ export default function App() {
       setTheme={setTheme}
       themes={themes}
     >
-      <Page />
+      <Suspense fallback={<PageFallback label={pageLabel} />}>
+        <Page user={user} />
+      </Suspense>
     </Layout>
   );
 }

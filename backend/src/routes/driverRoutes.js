@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
-import { createDriver, listDrivers, updateDriver, updateDriverStatus } from '../controllers/driverController.js';
+import { createDriver, listDriverHistory, listDrivers, updateDriver, updateDriverStatus } from '../controllers/driverController.js';
 import { downloadDriverTemplate, exportDrivers, importDrivers, previewDrivers } from '../controllers/driverExcelController.js';
 import { authorize } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
@@ -66,6 +66,7 @@ const listSchema = z.object({
 });
 
 router.get('/', validate(listSchema), listDrivers);
+router.get('/history', listDriverHistory);
 router.get('/template', authorize('admin', 'company'), downloadDriverTemplate);
 router.get('/export', authorize('admin', 'company'), exportDrivers);
 router.post('/import/preview', authorize('admin', 'company'), upload.single('file'), previewDrivers);

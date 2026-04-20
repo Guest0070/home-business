@@ -18,6 +18,7 @@ function statusClass(status) {
 export default function Drivers() {
   const [drivers, setDrivers] = useState([]);
   const [vehicles, setVehicles] = useState([]);
+  const [history, setHistory] = useState([]);
   const [dutyVehicleSelections, setDutyVehicleSelections] = useState({});
   const [error, setError] = useState('');
   const [importSummary, setImportSummary] = useState(null);
@@ -40,12 +41,14 @@ export default function Drivers() {
   }), [drivers]);
 
   async function load() {
-    const [driverRows, vehicleRows] = await Promise.all([
+    const [driverRows, vehicleRows, historyRows] = await Promise.all([
       api('/drivers?activeOnly=true'),
-      api('/vehicles')
+      api('/vehicles'),
+      api('/drivers/history')
     ]);
     setDrivers(driverRows);
     setVehicles(vehicleRows);
+    setHistory(historyRows);
     setDutyVehicleSelections(
       Object.fromEntries(driverRows.map((driver) => [driver.id, driver.current_vehicle_id || '']))
     );
@@ -258,6 +261,8 @@ export default function Drivers() {
             { key: 'current_vehicle_no', label: 'Vehicle' },
             { key: 'salary', label: 'Salary', render: (row) => money(row.salary) },
             { key: 'total_trips', label: 'Trips' },
+            { key: 'active_days', label: 'Active Days' },
+            { key: 'vacation_days', label: 'Vacation Days' },
             { key: 'total_profit', label: 'Profit', render: (row) => money(row.total_profit) }
           ]}
         />
@@ -270,6 +275,7 @@ export default function Drivers() {
               <div>
                 <h3 className="font-bold text-coal">{driver.name}</h3>
                 <p className="text-sm text-white/70">{driver.phone || 'No phone'} / {driver.current_vehicle_no || 'No vehicle assigned'}</p>
+                <p className="mt-1 text-xs text-slate-600">Active {driver.active_days || 0} days / Vacation {driver.vacation_days || 0} days</p>
               </div>
               <span className={`rounded px-2 py-1 text-xs font-semibold ${statusClass(driver.status)}`}>{driver.status.replace('_', ' ')}</span>
             </div>
@@ -305,6 +311,23 @@ export default function Drivers() {
           </section>
         ))}
       </div>
+
+      <section className="glass glass-card p-4">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 className="text-lg font-bold">Driver Activity History</h2>
+          <div className="text-sm text-slate-600">Active and vacation periods stay visible here.</div>
+        </div>
+        <DataTable
+          rows={history}
+          columns={[
+            { key: 'driver_name', label: 'Driver' },
+            { key: 'status', label: 'Status', render: (row) => <span className={`rounded px-2 py-1 text-xs font-semibold ${statusClass(row.status)}`}>{row.status.replace('_', ' ')}</span> },
+            { key: 'start_date', label: 'From' },
+            { key: 'end_date', label: 'To', render: (row) => row.end_date || 'Current' },
+            { key: 'notes', label: 'Notes', render: (row) => row.notes || '-' }
+          ]}
+        />
+      </section>
     </div>
   );
 }

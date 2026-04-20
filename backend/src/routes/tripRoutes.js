@@ -1,21 +1,40 @@
 import { Router } from 'express';
+import multer from 'multer';
 import { z } from 'zod';
+import {
+  downloadTripTemplate,
+  exportTripsWorkbook,
+  importTrips,
+  previewTrips
+} from '../controllers/tripExcelController.js';
 import { validate } from '../middleware/validate.js';
 import { createTrip, getTrip, listTrips } from '../controllers/tripController.js';
 
 const router = Router();
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (!file.originalname.toLowerCase().endsWith('.xlsx')) {
+      cb(new Error('Only .xlsx files are supported'));
+      return;
+    }
+    cb(null, true);
+  }
+});
 
 const tripSchema = z.object({
   body: z.object({
     trip_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    lr_number: z.string().min(1).max(80),
+    lr_number: z.string().max(80).optional(),
     vehicle_id: z.string().uuid(),
+    delivery_order_id: z.string().uuid().optional().or(z.literal('')),
     driver_id: z.string().uuid().optional().or(z.literal('')),
-    driver_name: z.string().min(2).max(120).optional(),
-    mine_id: z.string().uuid(),
-    factory_id: z.string().uuid(),
-    weight_tons: z.coerce.number().positive(),
-    rate_per_ton: z.coerce.number().nonnegative(),
+    driver_name: z.string().min(2).max(120),
+    mine_id: z.string().uuid().optional().or(z.literal('')),
+    factory_id: z.string().uuid().optional().or(z.literal('')),
+    weight_tons: z.coerce.number().positive().optional(),
+    rate_per_ton: z.coerce.number().nonnegative().optional(),
     notes: z.string().optional(),
     expense: z.object({
       diesel_litres: z.coerce.number().nonnegative().optional(),
@@ -48,6 +67,10 @@ const idSchema = z.object({
 });
 
 router.get('/', validate(listSchema), listTrips);
+router.get('/template', downloadTripTemplate);
+router.get('/export', exportTripsWorkbook);
+router.post('/import/preview', upload.single('file'), previewTrips);
+router.post('/import', upload.single('file'), importTrips);
 router.post('/', validate(tripSchema), createTrip);
 router.get('/:id', validate(idSchema), getTrip);
 

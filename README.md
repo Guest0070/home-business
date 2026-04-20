@@ -70,6 +70,27 @@ Stop the local PostgreSQL server with:
 .\scripts\stop-postgres.ps1
 ```
 
+## Hosted Mode
+
+If you want one simple URL instead of separate frontend and backend ports, use hosted mode:
+
+```powershell
+.\scripts\start-hosted.ps1
+```
+
+This builds the frontend and serves it from the Express backend.
+
+Open:
+
+- Local: `http://127.0.0.1:4000`
+- Network: `http://YOUR-LAPTOP-IP:4000`
+
+Stop hosted mode:
+
+```powershell
+.\scripts\stop-hosted.ps1
+```
+
 You can also use any PostgreSQL database:
 
 - Local native PostgreSQL installed on Windows
@@ -155,6 +176,14 @@ Daily operating guide:
 
 [HOW-TO-RUN.md](C:/Users/divya/Documents/Codex/2026-04-19-i-want-you-to-act-as/tms-coal-logistics/HOW-TO-RUN.md)
 
+Deployment guide:
+
+[DEPLOYMENT.md](C:/Users/divya/Documents/Codex/2026-04-19-i-want-you-to-act-as/tms-coal-logistics/DEPLOYMENT.md)
+
+Public hosting from your own PC:
+
+[PUBLIC-HOSTING.md](C:/Users/divya/Documents/Codex/2026-04-19-i-want-you-to-act-as/tms-coal-logistics/PUBLIC-HOSTING.md)
+
 ## Core Business Logic
 
 - Freight is calculated as `weight_tons * rate_per_ton`.
@@ -175,8 +204,11 @@ Daily operating guide:
 - `GET /api/mines`, `POST /api/mines`
 - `GET /api/factories`, `POST /api/factories`
 - `GET /api/routes`, `POST /api/routes`, `GET /api/routes/distance?mineId=&factoryId=`
+- `GET /api/delivery-orders`, `POST /api/delivery-orders`, `GET /api/delivery-orders/:id`
+- `GET /api/gps/vehicles`, `PATCH /api/gps/vehicles/:id`
 - `GET /api/trips`, `POST /api/trips`, `GET /api/trips/:id`
 - `GET /api/payments`, `POST /api/payments`
+- `GET /api/drivers/history`
 - `GET /api/reports/trip-profit`
 - `GET /api/reports/truck-profit`
 - `GET /api/reports/driver-performance`

@@ -1,6 +1,26 @@
 export default function ImportReview({ title, preview, keyField = 'name', onConfirm, busy }) {
   if (!preview) return null;
 
+  function getKeyValue(row) {
+    return row[keyField] || row.final?.[keyField] || row.vehicle_no || row.final?.vehicle_no || row.name || row.final?.name || '-';
+  }
+
+  function getStatus(row) {
+    if (row.errors?.length) {
+      return { label: 'Error', className: 'bg-red-50 text-red-700' };
+    }
+    if (row.warnings?.length) {
+      return { label: 'Warning', className: 'bg-amber-50 text-amber-700' };
+    }
+    return { label: 'Ready', className: 'bg-emerald-50 text-emerald-700' };
+  }
+
+  function getDetails(row) {
+    if (row.errors?.length) return row.errors.join(', ');
+    if (row.warnings?.length) return row.warnings.join(', ');
+    return row.preview_text || 'Will import with current preview values';
+  }
+
   return (
     <section className="panel space-y-3 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -18,14 +38,10 @@ export default function ImportReview({ title, preview, keyField = 'name', onConf
 
       <div className="space-y-3 md:hidden">
         {preview.rows.slice(0, 12).map((row) => (
-          <article key={`${row.rowNumber}-${row[keyField] || row.vehicle_no || row.name}`} className="rounded border border-slate-200 p-3 text-sm">
+          <article key={`${row.rowNumber}-${getKeyValue(row)}`} className="rounded border border-slate-200 p-3 text-sm">
             <div className="mb-2 flex items-center justify-between gap-3">
               <div className="font-semibold">Row {row.rowNumber}</div>
-              {row.errors?.length ? (
-                <span className="rounded bg-red-50 px-2 py-1 text-xs font-semibold text-red-700">Error</span>
-              ) : (
-                <span className="rounded bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">Ready</span>
-              )}
+              <span className={`rounded px-2 py-1 text-xs font-semibold ${getStatus(row).className}`}>{getStatus(row).label}</span>
             </div>
             <div className="space-y-2">
               <div className="flex items-start justify-between gap-3">
@@ -34,13 +50,11 @@ export default function ImportReview({ title, preview, keyField = 'name', onConf
               </div>
               <div className="flex items-start justify-between gap-3">
                 <span className="text-xs font-semibold uppercase text-slate-600">{keyField}</span>
-                <span className="text-right">{row[keyField] || row.vehicle_no || '-'}</span>
+                <span className="text-right">{getKeyValue(row)}</span>
               </div>
               <div className="flex items-start justify-between gap-3">
                 <span className="text-xs font-semibold uppercase text-slate-600">Details</span>
-                <span className="text-right text-slate-600">
-                  {row.errors?.length ? row.errors.join(', ') : 'Will import with current preview values'}
-                </span>
+                <span className="text-right text-slate-600">{getDetails(row)}</span>
               </div>
             </div>
           </article>
@@ -60,20 +74,14 @@ export default function ImportReview({ title, preview, keyField = 'name', onConf
           </thead>
           <tbody className="divide-y divide-slate-100">
             {preview.rows.slice(0, 12).map((row) => (
-              <tr key={`${row.rowNumber}-${row[keyField] || row.vehicle_no || row.name}`}>
+              <tr key={`${row.rowNumber}-${getKeyValue(row)}`}>
                 <td className="px-3 py-2">{row.rowNumber}</td>
                 <td className="px-3 py-2">{row.action}</td>
-                <td className="px-3 py-2">{row[keyField] || row.vehicle_no}</td>
+                <td className="px-3 py-2">{getKeyValue(row)}</td>
                 <td className="px-3 py-2">
-                  {row.errors?.length ? (
-                    <span className="rounded bg-red-50 px-2 py-1 text-xs font-semibold text-red-700">Error</span>
-                  ) : (
-                    <span className="rounded bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">Ready</span>
-                  )}
+                  <span className={`rounded px-2 py-1 text-xs font-semibold ${getStatus(row).className}`}>{getStatus(row).label}</span>
                 </td>
-                <td className="px-3 py-2 text-slate-600">
-                  {row.errors?.length ? row.errors.join(', ') : 'Will import with current preview values'}
-                </td>
+                <td className="px-3 py-2 text-slate-600">{getDetails(row)}</td>
               </tr>
             ))}
           </tbody>

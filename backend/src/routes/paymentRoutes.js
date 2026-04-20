@@ -13,7 +13,8 @@ const listSchema = z.object({
 
 const createSchema = z.object({
   body: z.object({
-    factory_id: z.string().uuid(),
+    factory_id: z.string().uuid().optional().or(z.literal('')),
+    delivery_order_id: z.string().uuid().optional().or(z.literal('')),
     payment_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     amount: z.coerce.number().positive(),
     mode: z.string().min(2).max(40).default('bank'),
@@ -33,4 +34,3 @@ router.post('/', validate(createSchema), createPayment);
 router.get('/ledger', getLedger);
 
 export default router;
-

@@ -1,5 +1,6 @@
 import ExcelJS from 'exceljs';
 import { query, withTransaction } from '../config/db.js';
+import { appendDriverStatusHistory, todayDate } from './driverStatusService.js';
 import { ApiError } from '../utils/apiError.js';
 
 const columns = [
@@ -309,13 +310,21 @@ export async function importDriversFromWorkbook(buffer) {
             existingResult.rows[0].id
           ]
         );
+        await appendDriverStatusHistory(client, {
+          driverId: existingResult.rows[0].id,
+          status: row.final.status,
+          startDate: row.final.status === 'vacation' ? (row.final.vacation_from || todayDate()) : todayDate(),
+          endDate: row.final.status === 'vacation' ? row.final.vacation_to : null,
+          notes: row.final.notes
+        });
       } else {
-        await client.query(
+        const created = await client.query(
           `INSERT INTO drivers (
             name, phone, license_no, salary, per_trip_allowance, status,
             current_vehicle_id, vacation_from, vacation_to, notes, is_active
           )
-          VALUES ($1,$2,$3,$4,0,$5,$6,$7,$8,$9,$10)`,
+          VALUES ($1,$2,$3,$4,0,$5,$6,$7,$8,$9,$10)
+          RETURNING id`,
           [
             row.final.name,
             row.final.phone,
@@ -329,6 +338,13 @@ export async function importDriversFromWorkbook(buffer) {
             row.final.is_active
           ]
         );
+        await appendDriverStatusHistory(client, {
+          driverId: created.rows[0].id,
+          status: row.final.status,
+          startDate: row.final.status === 'vacation' ? (row.final.vacation_from || todayDate()) : todayDate(),
+          endDate: row.final.status === 'vacation' ? row.final.vacation_to : null,
+          notes: row.final.notes
+        });
       }
     }
   });
@@ -345,4 +361,3 @@ export async function importDriversFromWorkbook(buffer) {
     }))
   };
 }
-
