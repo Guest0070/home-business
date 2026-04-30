@@ -151,6 +151,12 @@ async function findExistingTripByLr(client, lrNumber) {
       t.distance_km,
       t.weight_tons,
       t.rate_per_ton,
+      t.return_party_name,
+      t.return_from_name,
+      t.return_to_name,
+      t.return_weight_tons,
+      t.return_rate_per_ton,
+      t.return_notes,
       t.notes,
       COALESCE(e.diesel_litres, 0) AS diesel_litres,
       COALESCE(e.diesel_cost, 0) AS diesel_cost,
@@ -282,6 +288,64 @@ function buildExpensePayload(payloadExpense = {}, existingTrip = null) {
   };
 }
 
+function buildReturnLoadPayload(payload = {}, existingTrip = null, fallbackFromName = null) {
+  const existingHasReturnInfo = [
+    existingTrip?.return_party_name,
+    existingTrip?.return_from_name,
+    existingTrip?.return_to_name,
+    existingTrip?.return_weight_tons,
+    existingTrip?.return_rate_per_ton,
+    existingTrip?.return_notes
+  ].some(hasValue);
+  const incomingHasReturnInfo = [
+    payload.return_party_name,
+    payload.return_from_name,
+    payload.return_to_name,
+    payload.return_weight_tons,
+    payload.return_rate_per_ton,
+    payload.return_notes
+  ].some(hasValue);
+  const returnPartyName = hasValue(payload.return_party_name)
+    ? cleanText(payload.return_party_name)
+    : existingTrip?.return_party_name || null;
+  const returnFromName = hasValue(payload.return_from_name)
+    ? cleanText(payload.return_from_name)
+    : existingTrip?.return_from_name || fallbackFromName || null;
+  const returnToName = hasValue(payload.return_to_name)
+    ? cleanText(payload.return_to_name)
+    : existingTrip?.return_to_name || null;
+  const returnWeightTons = hasValue(payload.return_weight_tons)
+    ? cleanNumber(payload.return_weight_tons, 'Return weight tons', { positive: true })
+    : existingTrip?.return_weight_tons ?? null;
+  const returnRatePerTon = hasValue(payload.return_rate_per_ton)
+    ? cleanNumber(payload.return_rate_per_ton, 'Return rate per ton', { nonNegative: true })
+    : existingTrip?.return_rate_per_ton ?? null;
+  const returnNotes = hasValue(payload.return_notes)
+    ? cleanText(payload.return_notes)
+    : existingTrip?.return_notes || null;
+  const hasReturnInfo = existingHasReturnInfo || incomingHasReturnInfo;
+
+  if (!hasReturnInfo) {
+    return {
+      return_party_name: null,
+      return_from_name: null,
+      return_to_name: null,
+      return_weight_tons: null,
+      return_rate_per_ton: null,
+      return_notes: null
+    };
+  }
+
+  return {
+    return_party_name: returnPartyName,
+    return_from_name: returnFromName,
+    return_to_name: returnToName,
+    return_weight_tons: returnWeightTons,
+    return_rate_per_ton: returnRatePerTon,
+    return_notes: returnNotes
+  };
+}
+
 async function refreshDriverStatus(client, driverId, vehicleId) {
   if (!driverId) return;
   await client.query(
@@ -330,10 +394,16 @@ export async function saveTripFromPayload(client, payload, userId) {
   const ratePerTon = hasValue(payload.rate_per_ton)
     ? cleanNumber(payload.rate_per_ton, 'Rate per ton', { nonNegative: true })
     : deliveryOrder?.rate_per_ton ?? existingTrip?.rate_per_ton ?? null;
+  const finalFactoryName = deliveryOrder
+    ? (await findMasterById(client, 'factories', factoryId))?.name || existingTrip?.factory_name || null
+    : (factoryId
+      ? (await findMasterById(client, 'factories', factoryId))?.name || existingTrip?.factory_name || null
+      : existingTrip?.factory_name || null);
   const notes = existingTrip
     ? (hasValue(payload.notes) ? cleanText(payload.notes) : existingTrip.notes)
     : cleanText(payload.notes);
   const expense = buildExpensePayload(payload.expense || {}, existingTrip);
+  const returnLoad = buildReturnLoadPayload(payload, existingTrip, finalFactoryName);
 
   const driver = await resolveDriverForTrip(client, payload, existingTrip);
 
@@ -351,9 +421,15 @@ export async function saveTripFromPayload(client, payload, userId) {
         distance_km = $9,
         weight_tons = $10,
         rate_per_ton = $11,
-        notes = $12,
+        return_party_name = $12,
+        return_from_name = $13,
+        return_to_name = $14,
+        return_weight_tons = $15,
+        return_rate_per_ton = $16,
+        return_notes = $17,
+        notes = $18,
         updated_at = NOW()
-       WHERE id = $13
+       WHERE id = $19
        RETURNING *`,
       [
         tripDate,
@@ -367,6 +443,12 @@ export async function saveTripFromPayload(client, payload, userId) {
         route?.distance_km || (keepExistingRoute ? existingTrip.distance_km : null),
         weightTons,
         ratePerTon,
+        returnLoad.return_party_name,
+        returnLoad.return_from_name,
+        returnLoad.return_to_name,
+        returnLoad.return_weight_tons,
+        returnLoad.return_rate_per_ton,
+        returnLoad.return_notes,
         notes,
         existingTrip.id
       ]
@@ -374,9 +456,11 @@ export async function saveTripFromPayload(client, payload, userId) {
     : await client.query(
       `INSERT INTO trips (
         trip_date, lr_number, vehicle_id, driver_id, driver_name, mine_id, factory_id,
-        route_id, delivery_order_id, distance_km, weight_tons, rate_per_ton, notes, created_by
+        route_id, delivery_order_id, distance_km, weight_tons, rate_per_ton,
+        return_party_name, return_from_name, return_to_name, return_weight_tons,
+        return_rate_per_ton, return_notes, notes, created_by
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
       RETURNING *`,
       [
         tripDate,
@@ -391,6 +475,12 @@ export async function saveTripFromPayload(client, payload, userId) {
         route?.distance_km || null,
         weightTons,
         ratePerTon,
+        returnLoad.return_party_name,
+        returnLoad.return_from_name,
+        returnLoad.return_to_name,
+        returnLoad.return_weight_tons,
+        returnLoad.return_rate_per_ton,
+        returnLoad.return_notes,
         notes,
         userId
       ]

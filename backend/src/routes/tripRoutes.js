@@ -35,6 +35,12 @@ const tripSchema = z.object({
     factory_id: z.string().uuid().optional().or(z.literal('')),
     weight_tons: z.coerce.number().positive().optional(),
     rate_per_ton: z.coerce.number().nonnegative().optional(),
+    return_party_name: z.string().max(160).optional(),
+    return_from_name: z.string().max(160).optional(),
+    return_to_name: z.string().max(160).optional(),
+    return_weight_tons: z.coerce.number().positive().optional(),
+    return_rate_per_ton: z.coerce.number().nonnegative().optional(),
+    return_notes: z.string().optional(),
     notes: z.string().optional(),
     expense: z.object({
       diesel_litres: z.coerce.number().nonnegative().optional(),

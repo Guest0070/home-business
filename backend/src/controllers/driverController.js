@@ -39,12 +39,12 @@ export async function listDrivers(req, res, next) {
   try {
     const clauses = [];
     const values = [];
+    if (req.query.includeArchived !== 'true') {
+      clauses.push('d.is_active = TRUE');
+    }
     if (req.query.status) {
       values.push(req.query.status);
       clauses.push(`d.status = $${values.length}`);
-    }
-    if (req.query.activeOnly === 'true') {
-      clauses.push('d.is_active = TRUE');
     }
 
     const result = await query(
@@ -67,6 +67,17 @@ export async function listDrivers(req, res, next) {
           ), 0)::INT AS vacation_days
         FROM driver_status_history
         GROUP BY driver_id
+      ),
+      salary_totals AS (
+        SELECT
+          driver_id,
+          COALESCE(SUM(amount), 0) AS total_salary_paid,
+          COALESCE(SUM(amount) FILTER (
+            WHERE date_trunc('month', payment_date) = date_trunc('month', CURRENT_DATE)
+          ), 0) AS current_month_salary_paid,
+          MAX(payment_date) AS last_salary_payment_date
+        FROM driver_salary_payments
+        GROUP BY driver_id
       )
       SELECT d.*, v.vehicle_no AS current_vehicle_no,
         COALESCE(dp.total_trips, 0) AS total_trips,
@@ -75,11 +86,16 @@ export async function listDrivers(req, res, next) {
         dp.mileage,
         COALESCE(dp.abnormal_diesel_trips, 0) AS abnormal_diesel_trips,
         COALESCE(ht.active_days, 0) AS active_days,
-        COALESCE(ht.vacation_days, 0) AS vacation_days
+        COALESCE(ht.vacation_days, 0) AS vacation_days,
+        COALESCE(st.total_salary_paid, 0) AS total_salary_paid,
+        COALESCE(st.current_month_salary_paid, 0) AS current_month_salary_paid,
+        st.last_salary_payment_date,
+        GREATEST(COALESCE(d.salary, 0) - COALESCE(st.current_month_salary_paid, 0), 0) AS current_month_salary_pending
        FROM drivers d
        LEFT JOIN vehicles v ON v.id = d.current_vehicle_id
        LEFT JOIN driver_performance dp ON dp.driver_id = d.id OR LOWER(dp.driver_name) = LOWER(d.name)
        LEFT JOIN history_totals ht ON ht.driver_id = d.id
+       LEFT JOIN salary_totals st ON st.driver_id = d.id
        ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
        ORDER BY
         CASE d.status
@@ -111,10 +127,88 @@ export async function listDriverHistory(_req, res, next) {
   }
 }
 
+export async function listDriverSalaryPayments(req, res, next) {
+  try {
+    const values = [];
+    const clauses = [];
+
+    if (req.query.driverId) {
+      values.push(req.query.driverId);
+      clauses.push(`p.driver_id = $${values.length}`);
+    }
+    if (req.query.from) {
+      values.push(req.query.from);
+      clauses.push(`p.payment_date >= $${values.length}`);
+    }
+    if (req.query.to) {
+      values.push(req.query.to);
+      clauses.push(`p.payment_date <= $${values.length}`);
+    }
+
+    const result = await query(
+      `SELECT
+        p.*,
+        d.name AS driver_name,
+        d.salary AS driver_salary
+       FROM driver_salary_payments p
+       JOIN drivers d ON d.id = p.driver_id
+       ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
+       ORDER BY p.payment_date DESC, p.created_at DESC
+       LIMIT 400`,
+      values
+    );
+    res.json(result.rows);
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function createDriver(req, res, next) {
   try {
     const driver = await withTransaction((client) => createDriverRecord(client, req.body));
     res.status(201).json(driver);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function createDriverSalaryPayment(req, res, next) {
+  try {
+    const payment = await withTransaction(async (client) => {
+      const driverResult = await client.query(
+        `SELECT id, name, salary, is_active
+         FROM drivers
+         WHERE id = $1`,
+        [req.body.driver_id]
+      );
+      const driver = driverResult.rows[0];
+      if (!driver) throw new ApiError(400, 'Selected driver was not found');
+
+      const result = await client.query(
+        `INSERT INTO driver_salary_payments (
+          driver_id, payment_date, amount, reference_no, narration, notes, created_by
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,$7)
+        RETURNING *`,
+        [
+          req.body.driver_id,
+          req.body.payment_date,
+          req.body.amount,
+          req.body.reference_no || null,
+          req.body.narration.trim(),
+          req.body.notes || null,
+          req.user.id
+        ]
+      );
+
+      return {
+        ...result.rows[0],
+        driver_name: driver.name,
+        driver_salary: driver.salary
+      };
+    });
+
+    res.status(201).json(payment);
   } catch (error) {
     next(error);
   }
@@ -206,6 +300,76 @@ export async function updateDriver(req, res, next) {
     );
     if (!result.rows[0]) throw new ApiError(404, 'Driver not found');
     res.json(result.rows[0]);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function deleteDriverSalaryPayment(req, res, next) {
+  try {
+    const result = await query(
+      `DELETE FROM driver_salary_payments
+       WHERE id = $1
+       RETURNING *`,
+      [req.params.salaryPaymentId]
+    );
+    if (!result.rows[0]) throw new ApiError(404, 'Driver salary payment not found');
+    res.json({
+      mode: 'deleted',
+      message: 'Driver salary payment removed successfully.',
+      record: result.rows[0]
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function deleteDriver(req, res, next) {
+  try {
+    const linked = await query(
+      `SELECT
+        (SELECT COUNT(*)::INT FROM trips WHERE driver_id = $1) AS trip_count,
+        (SELECT COUNT(*)::INT FROM driver_status_history WHERE driver_id = $1) AS history_count,
+        (SELECT COUNT(*)::INT FROM driver_salary_payments WHERE driver_id = $1) AS salary_payment_count`,
+      [req.params.id]
+    );
+
+    const row = linked.rows[0];
+    const hasHistory = Number(row?.trip_count || 0) > 0
+      || Number(row?.history_count || 0) > 0
+      || Number(row?.salary_payment_count || 0) > 0;
+
+    if (hasHistory) {
+      const archived = await query(
+        `UPDATE drivers
+         SET is_active = FALSE,
+          status = 'inactive',
+          current_vehicle_id = NULL,
+          updated_at = NOW()
+         WHERE id = $1
+         RETURNING *`,
+        [req.params.id]
+      );
+      if (!archived.rows[0]) throw new ApiError(404, 'Driver not found');
+      return res.json({
+        mode: 'archived',
+        message: 'Driver has operational history, so it was archived instead of being fully deleted.',
+        record: archived.rows[0]
+      });
+    }
+
+    const result = await query(
+      `DELETE FROM drivers
+       WHERE id = $1
+       RETURNING *`,
+      [req.params.id]
+    );
+    if (!result.rows[0]) throw new ApiError(404, 'Driver not found');
+    res.json({
+      mode: 'deleted',
+      message: 'Driver removed successfully.',
+      record: result.rows[0]
+    });
   } catch (error) {
     next(error);
   }

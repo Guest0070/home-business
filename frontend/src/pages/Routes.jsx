@@ -22,6 +22,17 @@ export default function Routes() {
     await load();
   }
 
+  async function removeRoute(route) {
+    if (!window.confirm(`Remove route ${route.mine_name} to ${route.factory_name}?`)) return;
+    try {
+      const result = await api(`/routes/${route.id}`, { method: 'DELETE' });
+      await load();
+      if (result?.message) window.alert(result.message);
+    } catch (error) {
+      window.alert(error.message);
+    }
+  }
+
   return (
     <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
       <form onSubmit={submit} className="glass glass-card space-y-3 p-4">
@@ -58,7 +69,12 @@ export default function Routes() {
         { key: 'mine_name', label: 'Mine' },
         { key: 'factory_name', label: 'Factory' },
         { key: 'distance_km', label: 'Distance KM' },
-        { key: 'expected_diesel_litres', label: 'Expected Diesel' }
+        { key: 'expected_diesel_litres', label: 'Expected Diesel' },
+        {
+          key: 'actions',
+          label: 'Actions',
+          render: (row) => <button className="btn-muted px-2 py-1 text-red-700" onClick={() => removeRoute(row)}>Remove</button>
+        }
       ]} />
     </div>
   );

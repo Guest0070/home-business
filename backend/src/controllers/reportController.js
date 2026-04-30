@@ -1,18 +1,5 @@
 import { query } from '../config/db.js';
-
-function dateWhere(req) {
-  const values = [];
-  const clauses = [];
-  if (req.query.from) {
-    values.push(req.query.from);
-    clauses.push(`trip_date >= $${values.length}`);
-  }
-  if (req.query.to) {
-    values.push(req.query.to);
-    clauses.push(`trip_date <= $${values.length}`);
-  }
-  return { values, where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '' };
-}
+import { loadDataset } from '../services/exportService.js';
 
 export async function dashboard(_req, res, next) {
   try {
@@ -83,59 +70,25 @@ export async function dashboardCharts(_req, res, next) {
   }
 }
 
-export async function tripProfit(req, res, next) {
-  try {
-    const { where, values } = dateWhere(req);
-    const result = await query(`SELECT * FROM trip_financials ${where} ORDER BY trip_date DESC`, values);
-    res.json(result.rows);
-  } catch (error) {
-    next(error);
-  }
+function datasetResponder(kind) {
+  return async (req, res, next) => {
+    try {
+      res.json(await loadDataset(kind, req.query));
+    } catch (error) {
+      next(error);
+    }
+  };
 }
 
-export async function truckProfit(req, res, next) {
-  try {
-    const { where, values } = dateWhere(req);
-    const result = await query(
-      `SELECT vehicle_id, vehicle_no, ownership, COUNT(*)::INT AS trips,
-        ROUND(SUM(freight), 2) AS freight,
-        ROUND(SUM(total_expense), 2) AS expenses,
-        ROUND(SUM(profit), 2) AS profit,
-        ROUND(SUM(distance_km), 2) AS distance_km
-       FROM trip_financials
-       ${where}
-       GROUP BY vehicle_id, vehicle_no, ownership
-       ORDER BY profit DESC`,
-      values
-    );
-    res.json(result.rows);
-  } catch (error) {
-    next(error);
-  }
-}
-
-export async function driverPerformance(_req, res, next) {
-  try {
-    const result = await query('SELECT * FROM driver_performance ORDER BY total_profit DESC, mileage DESC NULLS LAST');
-    res.json(result.rows);
-  } catch (error) {
-    next(error);
-  }
-}
-
-export async function dieselUsage(req, res, next) {
-  try {
-    const { where, values } = dateWhere(req);
-    const result = await query(
-      `SELECT lr_number, trip_date, vehicle_no, driver_name, mine_name, factory_name,
-        distance_km, diesel_litres, mileage, abnormal_diesel
-       FROM trip_financials
-       ${where}
-       ORDER BY abnormal_diesel DESC, trip_date DESC`,
-      values
-    );
-    res.json(result.rows);
-  } catch (error) {
-    next(error);
-  }
-}
+export const tripProfit = datasetResponder('trip-profit');
+export const truckProfit = datasetResponder('truck-profit');
+export const driverPerformance = datasetResponder('driver-performance');
+export const dieselUsage = datasetResponder('diesel-usage');
+export const deliveryOrdersReport = datasetResponder('delivery-orders');
+export const paymentsReport = datasetResponder('payments');
+export const salaryPaymentsReport = datasetResponder('salary-payments');
+export const bankAccountsReport = datasetResponder('bank-accounts');
+export const bankTransactionsReport = datasetResponder('bank-transactions');
+export const bankLoansReport = datasetResponder('bank-loans');
+export const loanInstallmentsReport = datasetResponder('loan-installments');
+export const complianceReport = datasetResponder('compliance-reminders');

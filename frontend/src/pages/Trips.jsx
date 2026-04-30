@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { api, getApiBaseUrl, getToken } from '../api/client.js';
+import { api, apiForm, downloadApiFile } from '../api/client.js';
 import DataTable from '../components/DataTable.jsx';
 import ImportReview from '../components/ImportReview.jsx';
 import SearchableSelect from '../components/SearchableSelect.jsx';
@@ -19,6 +19,7 @@ export default function Trips() {
   const [importing, setImporting] = useState(false);
   const [filter, setFilter] = useState({ driver: '', from: '', to: '' });
   const [driverName, setDriverName] = useState('');
+  const [showReturnLoad, setShowReturnLoad] = useState(false);
   const [form, setForm] = useState({
     trip_date: today,
     lr_number: '',
@@ -30,10 +31,20 @@ export default function Trips() {
     factory_id: '',
     weight_tons: '',
     rate_per_ton: '',
+    return_party_name: '',
+    return_from_name: '',
+    return_to_name: '',
+    return_weight_tons: '',
+    return_rate_per_ton: '',
+    return_notes: '',
     expense: { diesel_litres: '', diesel_cost: '', driver_allowance: '', toll: '', other_expenses: '' }
   });
 
   const freight = useMemo(() => Number(form.weight_tons || 0) * Number(form.rate_per_ton || 0), [form.weight_tons, form.rate_per_ton]);
+  const returnFreight = useMemo(
+    () => Number(form.return_weight_tons || 0) * Number(form.return_rate_per_ton || 0),
+    [form.return_weight_tons, form.return_rate_per_ton]
+  );
   const expenseTotal = useMemo(() => (
     Number(form.expense.diesel_cost || 0) +
     Number(form.expense.driver_allowance || 0) +
@@ -41,8 +52,8 @@ export default function Trips() {
     Number(form.expense.other_expenses || 0)
   ), [form.expense]);
 
-  async function loadTrips() {
-    const params = new URLSearchParams(Object.entries(filter).filter(([, value]) => value));
+  async function loadTrips(nextFilter = filter) {
+    const params = new URLSearchParams(Object.entries(nextFilter).filter(([, value]) => value));
     setTrips(await api(`/trips?${params}`));
   }
 
@@ -69,6 +80,15 @@ export default function Trips() {
     () => openDeliveryOrders.find((order) => order.id === form.delivery_order_id) || null,
     [form.delivery_order_id, openDeliveryOrders]
   );
+  const latestTripDefaults = useMemo(() => {
+    if (!trips.length) return null;
+    if (form.vehicle_id) {
+      return trips.find((trip) => trip.vehicle_id === form.vehicle_id) || trips[0];
+    }
+    return trips[0];
+  }, [form.vehicle_id, trips]);
+  const doWeightExceeded = selectedDeliveryOrder
+    && Number(form.weight_tons || 0) > Number(selectedDeliveryOrder.pending_tons || 0);
 
   useEffect(() => {
     if (!form.mine_id || !form.factory_id) {
@@ -87,12 +107,56 @@ export default function Trips() {
       mine_id: selectedDeliveryOrder.mine_id || '',
       factory_id: selectedDeliveryOrder.factory_id || '',
       rate_per_ton: current.rate_per_ton || selectedDeliveryOrder.rate_per_ton || '',
-      weight_tons: current.weight_tons || selectedDeliveryOrder.pending_tons || ''
+      weight_tons: current.weight_tons || selectedDeliveryOrder.pending_tons || '',
+      return_from_name: current.return_from_name || selectedDeliveryOrder.factory_name || ''
     }));
   }, [selectedDeliveryOrder]);
 
   function updateExpense(key, value) {
     setForm((current) => ({ ...current, expense: { ...current.expense, [key]: value } }));
+  }
+
+  function updateReturnLoad(key, value) {
+    setShowReturnLoad(true);
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function applyLatestTripDefaults() {
+    if (!latestTripDefaults) return;
+    setShowReturnLoad(Boolean(
+      latestTripDefaults.return_party_name
+      || latestTripDefaults.return_from_name
+      || latestTripDefaults.return_to_name
+      || latestTripDefaults.return_weight_tons
+      || latestTripDefaults.return_rate_per_ton
+      || latestTripDefaults.return_notes
+    ));
+    setForm((current) => ({
+      ...current,
+      vehicle_id: current.vehicle_id || latestTripDefaults.vehicle_id || '',
+      driver_id: current.driver_id || latestTripDefaults.driver_id || '',
+      driver_name: current.driver_name || latestTripDefaults.driver_name || '',
+      mine_id: current.delivery_order_id ? current.mine_id : (current.mine_id || latestTripDefaults.mine_id || ''),
+      factory_id: current.delivery_order_id ? current.factory_id : (current.factory_id || latestTripDefaults.factory_id || ''),
+      weight_tons: current.weight_tons || latestTripDefaults.weight_tons || '',
+      rate_per_ton: current.rate_per_ton || latestTripDefaults.rate_per_ton || '',
+      return_party_name: current.return_party_name || latestTripDefaults.return_party_name || '',
+      return_from_name: current.return_from_name || latestTripDefaults.return_from_name || latestTripDefaults.factory_name || '',
+      return_to_name: current.return_to_name || latestTripDefaults.return_to_name || '',
+      return_weight_tons: current.return_weight_tons || latestTripDefaults.return_weight_tons || '',
+      return_rate_per_ton: current.return_rate_per_ton || latestTripDefaults.return_rate_per_ton || '',
+      return_notes: current.return_notes || latestTripDefaults.return_notes || '',
+      expense: {
+        diesel_litres: current.expense.diesel_litres || latestTripDefaults.diesel_litres || '',
+        diesel_cost: current.expense.diesel_cost || latestTripDefaults.diesel_cost || '',
+        driver_allowance: current.expense.driver_allowance || latestTripDefaults.driver_allowance || '',
+        toll: current.expense.toll || latestTripDefaults.toll || '',
+        other_expenses: current.expense.other_expenses || latestTripDefaults.other_expenses || ''
+      }
+    }));
+    if (!driverName && latestTripDefaults.driver_name) {
+      setDriverName(latestTripDefaults.driver_name);
+    }
   }
 
   function chooseDriverByName(name) {
@@ -107,27 +171,6 @@ export default function Trips() {
     }));
   }
 
-  async function downloadFile(path, filename) {
-    setError('');
-    try {
-      const response = await fetch(`${getApiBaseUrl()}${path}`, {
-        headers: { Authorization: `Bearer ${getToken()}` }
-      });
-      if (!response.ok) throw new Error('Download failed');
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
   async function reviewExcel(event) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -138,14 +181,7 @@ export default function Trips() {
     const formData = new FormData();
     formData.append('file', file);
     try {
-      const response = await fetch(`${getApiBaseUrl()}/trips/import/preview`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${getToken()}` },
-        body: formData
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data?.message || 'Preview failed');
-      setPreview(data);
+      setPreview(await apiForm('/trips/import/preview', formData));
     } catch (err) {
       setError(err.message);
       setPendingFile(null);
@@ -161,14 +197,7 @@ export default function Trips() {
     const formData = new FormData();
     formData.append('file', pendingFile);
     try {
-      const response = await fetch(`${getApiBaseUrl()}/trips/import`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${getToken()}` },
-        body: formData
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data?.message || 'Import failed');
-      setImportSummary(data);
+      setImportSummary(await apiForm('/trips/import', formData));
       setPreview(null);
       setPendingFile(null);
       await Promise.all([loadTrips(), loadMasters()]);
@@ -190,6 +219,14 @@ export default function Trips() {
       setError('Enter a driver name');
       return;
     }
+    const hasReturnLoad = showReturnLoad && [
+      form.return_party_name,
+      form.return_from_name,
+      form.return_to_name,
+      form.return_weight_tons,
+      form.return_rate_per_ton,
+      form.return_notes
+    ].some((value) => String(value || '').trim() !== '');
     try {
       await api('/trips', {
         method: 'POST',
@@ -201,6 +238,12 @@ export default function Trips() {
           factory_id: form.factory_id || undefined,
           weight_tons: form.weight_tons || undefined,
           rate_per_ton: form.rate_per_ton || undefined,
+          return_party_name: hasReturnLoad ? (form.return_party_name || undefined) : undefined,
+          return_from_name: hasReturnLoad ? (form.return_from_name || undefined) : undefined,
+          return_to_name: hasReturnLoad ? (form.return_to_name || undefined) : undefined,
+          return_weight_tons: hasReturnLoad ? (form.return_weight_tons || undefined) : undefined,
+          return_rate_per_ton: hasReturnLoad ? (form.return_rate_per_ton || undefined) : undefined,
+          return_notes: hasReturnLoad ? (form.return_notes || undefined) : undefined,
           delivery_order_id: form.delivery_order_id || undefined
         }
       });
@@ -215,8 +258,15 @@ export default function Trips() {
         factory_id: '',
         weight_tons: '',
         rate_per_ton: '',
+        return_party_name: '',
+        return_from_name: '',
+        return_to_name: '',
+        return_weight_tons: '',
+        return_rate_per_ton: '',
+        return_notes: '',
         expense: { diesel_litres: '', diesel_cost: '', driver_allowance: '', toll: '', other_expenses: '' }
       });
+      setShowReturnLoad(false);
       setDriverName('');
       await Promise.all([loadTrips(), loadMasters()]);
     } catch (err) {
@@ -224,11 +274,44 @@ export default function Trips() {
     }
   }
 
+  async function applyQuickDateFilter(mode) {
+    const now = new Date();
+    if (mode === 'today') {
+      const value = now.toISOString().slice(0, 10);
+      const nextFilter = { ...filter, from: value, to: value };
+      setFilter(nextFilter);
+      await loadTrips(nextFilter);
+      return;
+    }
+    if (mode === 'last7') {
+      const from = new Date(now.getTime());
+      from.setDate(now.getDate() - 6);
+      const nextFilter = {
+        ...filter,
+        from: from.toISOString().slice(0, 10),
+        to: now.toISOString().slice(0, 10)
+      };
+      setFilter(nextFilter);
+      await loadTrips(nextFilter);
+    }
+  }
+
   return (
     <div className="grid gap-4 xl:grid-cols-[430px_1fr]">
       <div className="space-y-4">
         <form onSubmit={submit} className="glass glass-card p-4">
-          <h2 className="mb-2 text-lg font-bold">New Trip</h2>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-lg font-bold">New Trip</h2>
+            <button
+              type="button"
+              className="btn-muted px-3 py-2"
+              onClick={applyLatestTripDefaults}
+              disabled={!latestTripDefaults}
+              title={latestTripDefaults ? 'Pull route, return load, and expense defaults from the latest matching trip' : 'No recent trip available yet'}
+            >
+              Use Last Trip Defaults
+            </button>
+          </div>
           <p className="mb-4 text-sm text-slate-600">Only date, truck, and driver are mandatory. Everything else can be added when the paperwork catches up.</p>
           {error && <div className="mb-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
           <div className="grid gap-3 sm:grid-cols-2">
@@ -263,6 +346,12 @@ export default function Trips() {
                   <span>Progress</span>
                   <strong>{tons(selectedDeliveryOrder.delivered_tons)} delivered / {tons(selectedDeliveryOrder.pending_tons)} pending</strong>
                 </div>
+                {doWeightExceeded && (
+                  <div className="trip-do-summary-row text-red-700">
+                    <span>Warning</span>
+                    <strong>This trip weight is above the pending D.O. tons.</strong>
+                  </div>
+                )}
               </div>
             )}
             <div>
@@ -330,13 +419,33 @@ export default function Trips() {
             <div><label>Distance</label><input value={distance} readOnly placeholder="Auto from route when available" /></div>
             <div><label>Weight Tons</label><input type="number" step="0.001" value={form.weight_tons} onChange={(e) => setForm({ ...form, weight_tons: e.target.value })} placeholder="Optional" /></div>
             <div><label>Rate Per Ton</label><input type="number" step="0.01" value={form.rate_per_ton} onChange={(e) => setForm({ ...form, rate_per_ton: e.target.value })} placeholder="Optional" /></div>
-            <div><label>Freight</label><input value={money(freight)} readOnly /></div>
+            <div><label>Outward Freight</label><input value={money(freight)} readOnly /></div>
+            <div className="sm:col-span-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="mb-0">Return Load</label>
+                <button type="button" className="btn-muted px-3 py-2" onClick={() => setShowReturnLoad((current) => !current)}>
+                  {showReturnLoad ? 'Hide Return Load' : 'Add Return Load'}
+                </button>
+              </div>
+            </div>
+            {showReturnLoad && (
+              <>
+                <div><label>Return Party</label><input value={form.return_party_name} onChange={(e) => updateReturnLoad('return_party_name', e.target.value)} placeholder="Optional" /></div>
+                <div><label>Return From</label><input value={form.return_from_name} onChange={(e) => updateReturnLoad('return_from_name', e.target.value)} placeholder="Defaults from factory" /></div>
+                <div><label>Return To</label><input value={form.return_to_name} onChange={(e) => updateReturnLoad('return_to_name', e.target.value)} placeholder="Where the truck goes next" /></div>
+                <div><label>Return Weight Tons</label><input type="number" step="0.001" value={form.return_weight_tons} onChange={(e) => updateReturnLoad('return_weight_tons', e.target.value)} placeholder="Optional" /></div>
+                <div><label>Return Rate Per Ton</label><input type="number" step="0.01" value={form.return_rate_per_ton} onChange={(e) => updateReturnLoad('return_rate_per_ton', e.target.value)} placeholder="Optional" /></div>
+                <div><label>Return Freight</label><input value={money(returnFreight)} readOnly /></div>
+                <div className="sm:col-span-2"><label>Return Notes</label><input value={form.return_notes} onChange={(e) => updateReturnLoad('return_notes', e.target.value)} placeholder="Optional" /></div>
+              </>
+            )}
             <div><label>Diesel Litres</label><input type="number" step="0.01" value={form.expense.diesel_litres} onChange={(e) => updateExpense('diesel_litres', e.target.value)} /></div>
             <div><label>Diesel Cost</label><input type="number" step="0.01" value={form.expense.diesel_cost} onChange={(e) => updateExpense('diesel_cost', e.target.value)} /></div>
             <div><label>Driver Allowance</label><input type="number" step="0.01" value={form.expense.driver_allowance} onChange={(e) => updateExpense('driver_allowance', e.target.value)} /></div>
             <div><label>Toll</label><input type="number" step="0.01" value={form.expense.toll} onChange={(e) => updateExpense('toll', e.target.value)} /></div>
             <div><label>Other Expenses</label><input type="number" step="0.01" value={form.expense.other_expenses} onChange={(e) => updateExpense('other_expenses', e.target.value)} /></div>
-            <div><label>Estimated Profit</label><input value={money(freight - expenseTotal)} readOnly /></div>
+            <div><label>Total Revenue</label><input value={money(freight + returnFreight)} readOnly /></div>
+            <div><label>Estimated Profit</label><input value={money((freight + returnFreight) - expenseTotal)} readOnly /></div>
           </div>
           <button className="btn-primary mt-4 w-full">Save Trip</button>
         </form>
@@ -356,8 +465,8 @@ export default function Trips() {
               )}
             </div>
           )}
-          <button className="btn-muted w-full" onClick={() => downloadFile('/trips/template', 'trip-import-template.xlsx')}>Download Template</button>
-          <button className="btn-muted w-full" onClick={() => downloadFile('/trips/export', 'trips-export.xlsx')}>Export Trips</button>
+          <button className="btn-muted w-full" onClick={() => downloadApiFile('/trips/template', 'trip-import-template.xlsx').catch((err) => setError(err.message))}>Download Template</button>
+          <button className="btn-muted w-full" onClick={() => downloadApiFile('/trips/export', 'trips-export.xlsx').catch((err) => setError(err.message))}>Export Trips</button>
           <label className="block">
             Review Trip Excel
             <input className="mt-1" type="file" accept=".xlsx" onChange={reviewExcel} />
@@ -380,6 +489,20 @@ export default function Trips() {
           <input type="date" value={filter.to} onChange={(e) => setFilter({ ...filter, to: e.target.value })} />
           <button className="btn-muted" onClick={loadTrips}>Apply Filters</button>
         </div>
+        <div className="flex flex-wrap gap-2">
+          <button className="btn-muted px-3 py-2" onClick={() => applyQuickDateFilter('today')}>Today</button>
+          <button className="btn-muted px-3 py-2" onClick={() => applyQuickDateFilter('last7')}>Last 7 Days</button>
+          <button
+            className="btn-muted px-3 py-2"
+            onClick={() => {
+              const nextFilter = { driver: '', from: '', to: '' };
+              setFilter(nextFilter);
+              loadTrips(nextFilter).catch(console.error);
+            }}
+          >
+            Clear Filters
+          </button>
+        </div>
         <DataTable
           rows={trips}
           columns={[
@@ -390,7 +513,15 @@ export default function Trips() {
             { key: 'driver_name', label: 'Driver' },
             { key: 'factory_name', label: 'Party' },
             { key: 'weight_tons', label: 'Weight', render: (row) => row.weight_tons ? tons(row.weight_tons) : '-' },
-            { key: 'freight', label: 'Freight', render: (row) => money(row.freight) },
+            {
+              key: 'return_load',
+              label: 'Return Load',
+              render: (row) => row.return_party_name || row.return_to_name || row.return_weight_tons
+                ? `${row.return_party_name || 'Return'} / ${row.return_to_name || row.return_from_name || '-'} / ${row.return_weight_tons ? tons(row.return_weight_tons) : '-'}`
+                : '-'
+            },
+            { key: 'return_freight', label: 'Return Freight', render: (row) => money(row.return_freight) },
+            { key: 'freight', label: 'Revenue', render: (row) => money(row.freight) },
             { key: 'total_expense', label: 'Expense', render: (row) => money(row.total_expense) },
             { key: 'profit', label: 'Profit', render: (row) => money(row.profit) },
             { key: 'mileage', label: 'Mileage' },

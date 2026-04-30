@@ -8,6 +8,22 @@ import Login from './pages/Login.jsx';
 const pages = {
   dashboard: lazy(() => import('./pages/Dashboard.jsx')),
   'delivery-orders': lazy(() => import('./pages/DeliveryOrders.jsx')),
+  'do-tracker': lazy(() => import('./pages/DeliveryOrders.jsx')),
+  'do-entry': lazy(() => import('./pages/DeliveryOrders.jsx')),
+  'do-import': lazy(() => import('./pages/DeliveryOrders.jsx')),
+  banking: lazy(() => import('./pages/Banking.jsx')),
+  'bank-accounts': lazy(() => import('./pages/Banking.jsx')),
+  'bank-entries': lazy(() => import('./pages/Banking.jsx')),
+  'bank-statements': lazy(() => import('./pages/Banking.jsx')),
+  'bank-loans': lazy(() => import('./pages/Banking.jsx')),
+  compliance: lazy(() => import('./pages/Compliance.jsx')),
+  'compliance-overview': lazy(() => import('./pages/Compliance.jsx')),
+  'compliance-insurance': lazy(() => import('./pages/Compliance.jsx')),
+  'compliance-road-tax': lazy(() => import('./pages/Compliance.jsx')),
+  'compliance-fitness': lazy(() => import('./pages/Compliance.jsx')),
+  'compliance-permit': lazy(() => import('./pages/Compliance.jsx')),
+  'compliance-pollution': lazy(() => import('./pages/Compliance.jsx')),
+  'compliance-mining': lazy(() => import('./pages/Compliance.jsx')),
   gps: lazy(() => import('./pages/GpsTracking.jsx')),
   trips: lazy(() => import('./pages/Trips.jsx')),
   drivers: lazy(() => import('./pages/Drivers.jsx')),
@@ -63,7 +79,7 @@ export default function App() {
       themes={themes}
     >
       <Suspense fallback={<PageFallback label={pageLabel} />}>
-        <Page user={user} />
+        <Page user={user} page={page} setPage={setPage} />
       </Suspense>
     </Layout>
   );

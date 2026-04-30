@@ -49,3 +49,54 @@ export async function api(path, options = {}) {
 
   return data;
 }
+
+export async function apiForm(path, formData, options = {}) {
+  const headers = { ...(options.headers || {}) };
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const response = await fetch(`${API_URL}${path}`, {
+    ...options,
+    method: options.method || 'POST',
+    headers,
+    body: formData
+  });
+
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : null;
+
+  if (!response.ok) {
+    throw new Error(data?.message || 'Request failed');
+  }
+
+  return data;
+}
+
+export async function downloadApiFile(path, filename) {
+  const headers = {};
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const response = await fetch(`${API_URL}${path}`, { headers });
+  if (!response.ok) {
+    let message = 'Download failed';
+    try {
+      const text = await response.text();
+      const data = text ? JSON.parse(text) : null;
+      message = data?.message || message;
+    } catch {
+      // ignore parse issue and keep generic message
+    }
+    throw new Error(message);
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}

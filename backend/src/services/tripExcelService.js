@@ -13,11 +13,17 @@ const columns = [
   { header: 'factory_name', key: 'factory_name', width: 24 },
   { header: 'weight_tons', key: 'weight_tons', width: 14 },
   { header: 'rate_per_ton', key: 'rate_per_ton', width: 14 },
+  { header: 'return_party_name', key: 'return_party_name', width: 22 },
+  { header: 'return_from_name', key: 'return_from_name', width: 22 },
+  { header: 'return_to_name', key: 'return_to_name', width: 22 },
+  { header: 'return_weight_tons', key: 'return_weight_tons', width: 18 },
+  { header: 'return_rate_per_ton', key: 'return_rate_per_ton', width: 18 },
   { header: 'diesel_litres', key: 'diesel_litres', width: 14 },
   { header: 'diesel_cost', key: 'diesel_cost', width: 14 },
   { header: 'driver_allowance', key: 'driver_allowance', width: 16 },
   { header: 'toll', key: 'toll', width: 12 },
   { header: 'other_expenses', key: 'other_expenses', width: 18 },
+  { header: 'return_notes', key: 'return_notes', width: 26 },
   { header: 'notes', key: 'notes', width: 30 }
 ];
 
@@ -112,6 +118,10 @@ function readRows(sheet) {
     const driverName = normaliseText(getCellValue(row, headerMap, ['driver_name'])) || null;
     const mineName = normaliseText(getCellValue(row, headerMap, ['mine_name'])) || null;
     const factoryName = normaliseText(getCellValue(row, headerMap, ['factory_name', 'party_name'])) || null;
+    const returnPartyName = normaliseText(getCellValue(row, headerMap, ['return_party_name'])) || null;
+    const returnFromName = normaliseText(getCellValue(row, headerMap, ['return_from_name'])) || null;
+    const returnToName = normaliseText(getCellValue(row, headerMap, ['return_to_name'])) || null;
+    const returnNotes = normaliseText(getCellValue(row, headerMap, ['return_notes'])) || null;
     const notes = normaliseText(getCellValue(row, headerMap, ['notes'])) || null;
 
     const hasAnyData = [
@@ -124,11 +134,17 @@ function readRows(sheet) {
       factoryName,
       getCellValue(row, headerMap, ['weight_tons']),
       getCellValue(row, headerMap, ['rate_per_ton']),
+      returnPartyName,
+      returnFromName,
+      returnToName,
+      getCellValue(row, headerMap, ['return_weight_tons']),
+      getCellValue(row, headerMap, ['return_rate_per_ton']),
       getCellValue(row, headerMap, ['diesel_litres']),
       getCellValue(row, headerMap, ['diesel_cost']),
       getCellValue(row, headerMap, ['driver_allowance']),
       getCellValue(row, headerMap, ['toll']),
       getCellValue(row, headerMap, ['other_expenses']),
+      returnNotes,
       notes
     ].some((value) => normaliseText(value));
 
@@ -138,6 +154,8 @@ function readRows(sheet) {
     let tripDate = null;
     let weightTons = null;
     let ratePerTon = null;
+    let returnWeightTons = null;
+    let returnRatePerTon = null;
     let dieselLitres = null;
     let dieselCost = null;
     let driverAllowance = null;
@@ -147,6 +165,8 @@ function readRows(sheet) {
     try { tripDate = parseDateText(tripDateRaw); } catch (error) { errors.push(`trip_date ${error.message}`); }
     try { weightTons = parseNumber(getCellValue(row, headerMap, ['weight_tons']), 'weight_tons', { positive: true }); } catch (error) { errors.push(error.message); }
     try { ratePerTon = parseNumber(getCellValue(row, headerMap, ['rate_per_ton']), 'rate_per_ton', { nonNegative: true }); } catch (error) { errors.push(error.message); }
+    try { returnWeightTons = parseNumber(getCellValue(row, headerMap, ['return_weight_tons']), 'return_weight_tons', { positive: true }); } catch (error) { errors.push(error.message); }
+    try { returnRatePerTon = parseNumber(getCellValue(row, headerMap, ['return_rate_per_ton']), 'return_rate_per_ton', { nonNegative: true }); } catch (error) { errors.push(error.message); }
     try { dieselLitres = parseNumber(getCellValue(row, headerMap, ['diesel_litres']), 'diesel_litres', { nonNegative: true }); } catch (error) { errors.push(error.message); }
     try { dieselCost = parseNumber(getCellValue(row, headerMap, ['diesel_cost']), 'diesel_cost', { nonNegative: true }); } catch (error) { errors.push(error.message); }
     try { driverAllowance = parseNumber(getCellValue(row, headerMap, ['driver_allowance']), 'driver_allowance', { nonNegative: true }); } catch (error) { errors.push(error.message); }
@@ -164,11 +184,17 @@ function readRows(sheet) {
       factory_name: factoryName,
       weight_tons: weightTons,
       rate_per_ton: ratePerTon,
+      return_party_name: returnPartyName,
+      return_from_name: returnFromName,
+      return_to_name: returnToName,
+      return_weight_tons: returnWeightTons,
+      return_rate_per_ton: returnRatePerTon,
       diesel_litres: dieselLitres,
       diesel_cost: dieselCost,
       driver_allowance: driverAllowance,
       toll,
       other_expenses: otherExpenses,
+      return_notes: returnNotes,
       notes,
       errors,
       warnings: []
@@ -212,6 +238,12 @@ async function enrichRows(rows) {
           dord.do_number,
           t.weight_tons,
           t.rate_per_ton,
+          t.return_party_name,
+          t.return_from_name,
+          t.return_to_name,
+          t.return_weight_tons,
+          t.return_rate_per_ton,
+          t.return_notes,
           t.notes,
           COALESCE(e.diesel_litres, 0) AS diesel_litres,
           COALESCE(e.diesel_cost, 0) AS diesel_cost,
@@ -296,6 +328,12 @@ async function enrichRows(rows) {
     const finalFactoryName = deliveryOrder?.factory_name || factory?.name || existing?.factory_name || null;
     const finalRatePerTon = row.rate_per_ton ?? deliveryOrder?.rate_per_ton ?? existing?.rate_per_ton ?? null;
     const finalWeightTons = row.weight_tons ?? existing?.weight_tons ?? null;
+    const finalReturnFromName = row.return_from_name || existing?.return_from_name || finalFactoryName || null;
+    const finalReturnPartyName = row.return_party_name || existing?.return_party_name || null;
+    const finalReturnToName = row.return_to_name || existing?.return_to_name || null;
+    const finalReturnWeightTons = row.return_weight_tons ?? existing?.return_weight_tons ?? null;
+    const finalReturnRatePerTon = row.return_rate_per_ton ?? existing?.return_rate_per_ton ?? null;
+    const finalReturnNotes = row.return_notes ?? existing?.return_notes ?? null;
     const finalTripDate = row.trip_date || existing?.trip_date || null;
     const route = finalMineId && finalFactoryId ? routeMap.get(`${finalMineId}|${finalFactoryId}`) || null : null;
 
@@ -314,7 +352,9 @@ async function enrichRows(rows) {
         vehicle_no: row.vehicle_no || existing?.vehicle_no || null,
         driver_name: row.driver_name || existing?.driver_name || null,
         mine_name: finalMineName,
-        factory_name: finalFactoryName
+        factory_name: finalFactoryName,
+        return_party_name: finalReturnPartyName,
+        return_to_name: finalReturnToName
       }
     });
     row.final = {
@@ -326,7 +366,12 @@ async function enrichRows(rows) {
       mine_name: finalMineName,
       factory_name: finalFactoryName,
       weight_tons: finalWeightTons,
-      rate_per_ton: finalRatePerTon
+      rate_per_ton: finalRatePerTon,
+      return_party_name: finalReturnPartyName,
+      return_from_name: finalReturnFromName,
+      return_to_name: finalReturnToName,
+      return_weight_tons: finalReturnWeightTons,
+      return_rate_per_ton: finalReturnRatePerTon
     };
     row.importPayload = {
       trip_date: row.trip_date || undefined,
@@ -338,6 +383,12 @@ async function enrichRows(rows) {
       factory_name: row.factory_name || undefined,
       weight_tons: row.weight_tons ?? undefined,
       rate_per_ton: row.rate_per_ton ?? undefined,
+      return_party_name: row.return_party_name || undefined,
+      return_from_name: row.return_from_name || undefined,
+      return_to_name: row.return_to_name || undefined,
+      return_weight_tons: row.return_weight_tons ?? undefined,
+      return_rate_per_ton: row.return_rate_per_ton ?? undefined,
+      return_notes: row.return_notes ?? undefined,
       notes: row.notes ?? undefined,
       expense: {
         diesel_litres: row.diesel_litres ?? undefined,
@@ -399,11 +450,17 @@ export async function buildTripTemplateWorkbook() {
       factory_name: '',
       weight_tons: 28.5,
       rate_per_ton: '',
+      return_party_name: 'Fresh return consignee',
+      return_from_name: 'Shree Cement',
+      return_to_name: 'Raipur Yard',
+      return_weight_tons: 21,
+      return_rate_per_ton: 930,
       diesel_litres: 42,
       diesel_cost: 3800,
       driver_allowance: 700,
       toll: 450,
       other_expenses: '',
+      return_notes: 'Optional return load on the same trip record',
       notes: 'Fresh trip, LR auto-assign'
     },
     {
@@ -416,11 +473,17 @@ export async function buildTripTemplateWorkbook() {
       factory_name: '',
       weight_tons: '',
       rate_per_ton: '',
+      return_party_name: '',
+      return_from_name: '',
+      return_to_name: '',
+      return_weight_tons: '',
+      return_rate_per_ton: '',
       diesel_litres: '',
       diesel_cost: '',
       driver_allowance: 900,
       toll: 525,
       other_expenses: '',
+      return_notes: '',
       notes: 'Update existing trip later using the LR number'
     },
     {
@@ -433,11 +496,17 @@ export async function buildTripTemplateWorkbook() {
       factory_name: 'Shree Cement',
       weight_tons: '',
       rate_per_ton: '',
+      return_party_name: '',
+      return_from_name: 'Shree Cement',
+      return_to_name: '',
+      return_weight_tons: '',
+      return_rate_per_ton: '',
       diesel_litres: '',
       diesel_cost: '',
       driver_allowance: '',
       toll: '',
       other_expenses: '',
+      return_notes: '',
       notes: 'New driver name will be created automatically'
     }
   ]);
@@ -453,6 +522,7 @@ export async function buildTripTemplateWorkbook() {
     ['driver_name', 'Required for new trips. If the name does not exist yet, the driver will be created automatically. Blank on updates means keep the current driver.'],
     ['mine_name / factory_name', 'Optional when there is no D.O. number. If D.O. is present, these are ignored.'],
     ['weight_tons / rate_per_ton', 'Optional. Blank on updates keeps the current value.'],
+    ['return_* columns', 'Optional. Use these for the return load from factory back toward the next destination. Blank values keep current return-load details on update.'],
     ['Expense columns', 'Optional. Blank on updates keeps current expense values.'],
     ['notes', 'Optional. Blank on updates keeps the current note.']
   ]);
@@ -474,11 +544,17 @@ export async function buildTripExportWorkbook() {
       f.name AS factory_name,
       t.weight_tons,
       t.rate_per_ton,
+      t.return_party_name,
+      t.return_from_name,
+      t.return_to_name,
+      t.return_weight_tons,
+      t.return_rate_per_ton,
       COALESCE(e.diesel_litres, 0) AS diesel_litres,
       COALESCE(e.diesel_cost, 0) AS diesel_cost,
       COALESCE(e.driver_allowance, 0) AS driver_allowance,
       COALESCE(e.toll, 0) AS toll,
       COALESCE(e.other_expenses, 0) AS other_expenses,
+      t.return_notes,
       t.notes
      FROM trips t
      JOIN vehicles v ON v.id = t.vehicle_id
