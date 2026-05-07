@@ -6,6 +6,7 @@ const columns = [
   { header: 'vehicle_no', key: 'vehicle_no', width: 18 },
   { header: 'ownership', key: 'ownership', width: 14 },
   { header: 'owner_name', key: 'owner_name', width: 24 },
+  { header: 'chassis_last5', key: 'chassis_last5', width: 16 },
   { header: 'status', key: 'status', width: 14 },
   { header: 'is_active', key: 'is_active', width: 12 }
 ];
@@ -55,16 +56,18 @@ function buildSummaryRows(sheet) {
     const vehicleNo = normaliseText(row.getCell(headerMap.get('vehicle_no')).value).toUpperCase();
     const ownershipText = headerMap.has('ownership') ? normaliseText(row.getCell(headerMap.get('ownership')).value).toLowerCase() : '';
     const ownerNameText = headerMap.has('owner_name') ? normaliseText(row.getCell(headerMap.get('owner_name')).value) : '';
+    const chassisLast5Text = headerMap.has('chassis_last5') ? normaliseText(row.getCell(headerMap.get('chassis_last5')).value) : '';
     const statusText = headerMap.has('status') ? normaliseText(row.getCell(headerMap.get('status')).value).toLowerCase() : '';
     const isActiveRaw = headerMap.has('is_active') ? row.getCell(headerMap.get('is_active')).value : '';
 
-    if (!vehicleNo && !ownershipText && !ownerNameText && !statusText && !normaliseText(isActiveRaw)) return;
+    if (!vehicleNo && !ownershipText && !ownerNameText && !chassisLast5Text && !statusText && !normaliseText(isActiveRaw)) return;
 
     const rowData = {
       rowNumber,
       vehicle_no: vehicleNo,
       ownership: ownershipText || null,
       owner_name: ownerNameText || null,
+      chassis_last5: chassisLast5Text || null,
       status: statusText || null,
       is_active: null,
       errors: [],
@@ -77,6 +80,9 @@ function buildSummaryRows(sheet) {
     }
     if (rowData.status && !statusValues.has(rowData.status)) {
       rowData.errors.push('status must be available, standby, on_trip, or repair');
+    }
+    if (rowData.chassis_last5 && !/^\d{5}$/.test(rowData.chassis_last5)) {
+      rowData.errors.push('chassis_last5 must be exactly 5 digits');
     }
 
     try {
@@ -93,7 +99,7 @@ function buildSummaryRows(sheet) {
 
 async function enrichRows(rows) {
   const existing = await query(
-    `SELECT id, vehicle_no, ownership, owner_name, status, is_active
+    `SELECT id, vehicle_no, ownership, owner_name, chassis_last5, status, is_active
      FROM vehicles`
   );
   const existingMap = new Map(existing.rows.map((row) => [row.vehicle_no.toUpperCase(), row]));
@@ -111,12 +117,14 @@ async function enrichRows(rows) {
       existing: existingRow ? {
         ownership: existingRow.ownership,
         owner_name: existingRow.owner_name,
+        chassis_last5: existingRow.chassis_last5,
         status: existingRow.status,
         is_active: existingRow.is_active
       } : null,
       final: {
         ownership: row.ownership || existingRow?.ownership || null,
         owner_name: row.owner_name ?? existingRow?.owner_name ?? null,
+        chassis_last5: row.chassis_last5 ?? existingRow?.chassis_last5 ?? null,
         status: row.status || existingRow?.status || 'available',
         is_active: row.is_active ?? existingRow?.is_active ?? true
       }
@@ -156,9 +164,9 @@ export async function buildVehicleTemplateWorkbook() {
   const sheet = workbook.addWorksheet('Vehicles');
   styleSheet(sheet);
   sheet.addRows([
-    { vehicle_no: 'CG04AB1234', ownership: 'own', owner_name: 'Coal Logistics', status: 'available', is_active: 'yes' },
-    { vehicle_no: 'JH10MK4567', ownership: 'market', owner_name: '', status: 'standby', is_active: '' },
-    { vehicle_no: 'OD09TR8899', ownership: 'own', owner_name: '', status: '', is_active: '' }
+    { vehicle_no: 'CG04AB1234', ownership: 'own', owner_name: 'Coal Logistics', chassis_last5: '12345', status: 'available', is_active: 'yes' },
+    { vehicle_no: 'JH10MK4567', ownership: 'market', owner_name: '', chassis_last5: '', status: 'standby', is_active: '' },
+    { vehicle_no: 'OD09TR8899', ownership: 'own', owner_name: '', chassis_last5: '', status: '', is_active: '' }
   ]);
 
   const help = workbook.addWorksheet('Instructions');
@@ -168,6 +176,7 @@ export async function buildVehicleTemplateWorkbook() {
     ['vehicle_no', 'Required. Existing truck numbers will be updated.'],
     ['ownership', 'Required for new trucks. Blank on existing rows means keep current value.'],
     ['owner_name', 'Optional. Blank means keep current value on updates.'],
+    ['chassis_last5', 'Optional. Use the last 5 chassis digits for road tax work. Blank means keep current value on updates.'],
     ['status', 'Optional. Use available, standby, on_trip, or repair. Blank means keep current value on updates.'],
     ['is_active', 'Optional. Use yes/no or true/false. Blank means keep current value on updates.']
   ]);
@@ -179,7 +188,7 @@ export async function buildVehicleTemplateWorkbook() {
 
 export async function buildVehicleExportWorkbook() {
   const result = await query(
-    `SELECT vehicle_no, ownership, owner_name, status, is_active
+    `SELECT vehicle_no, ownership, owner_name, chassis_last5, status, is_active
      FROM vehicles
      ORDER BY vehicle_no`
   );
@@ -202,15 +211,15 @@ export async function importVehiclesFromWorkbook(buffer) {
       if (row.action === 'update') {
         await client.query(
           `UPDATE vehicles
-           SET ownership = $1, owner_name = $2, status = $3, is_active = $4
-           WHERE vehicle_no = $5`,
-          [row.final.ownership, row.final.owner_name, row.final.status, row.final.is_active, row.vehicle_no]
+           SET ownership = $1, owner_name = $2, chassis_last5 = $3, status = $4, is_active = $5
+           WHERE vehicle_no = $6`,
+          [row.final.ownership, row.final.owner_name, row.final.chassis_last5, row.final.status, row.final.is_active, row.vehicle_no]
         );
       } else {
         await client.query(
-          `INSERT INTO vehicles (vehicle_no, ownership, owner_name, status, is_active)
-           VALUES ($1,$2,$3,$4,$5)`,
-          [row.vehicle_no, row.final.ownership, row.final.owner_name, row.final.status, row.final.is_active]
+          `INSERT INTO vehicles (vehicle_no, ownership, owner_name, chassis_last5, status, is_active)
+           VALUES ($1,$2,$3,$4,$5,$6)`,
+          [row.vehicle_no, row.final.ownership, row.final.owner_name, row.final.chassis_last5, row.final.status, row.final.is_active]
         );
       }
     }
@@ -228,4 +237,3 @@ export async function importVehiclesFromWorkbook(buffer) {
     }))
   };
 }
-

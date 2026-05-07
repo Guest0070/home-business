@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { downloadVehicleTemplate, exportVehicles, importVehicles, previewVehicles } from '../controllers/vehicleExcelController.js';
 import { authorize } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
-import { createMaster, listMaster, updateVehicleStatus } from '../controllers/masterController.js';
+import { createMaster, deleteMaster, listMaster, updateVehicleStatus } from '../controllers/masterController.js';
 
 const base = { query: z.object({}).passthrough(), params: z.object({}) };
 const upload = multer({
@@ -25,6 +25,7 @@ const vehicleSchema = z.object({
     vehicle_no: z.string().min(3).max(40),
     ownership: z.enum(['own', 'market']),
     owner_name: z.string().max(140).optional(),
+    chassis_last5: z.string().regex(/^\d{5}$/).optional().or(z.literal('')),
     status: z.enum(['available', 'standby', 'on_trip', 'repair']).optional().default('available'),
     is_active: z.boolean().optional().default(true)
   })
@@ -34,6 +35,12 @@ const vehicleStatusSchema = z.object({
   body: z.object({
     status: z.enum(['available', 'standby', 'on_trip', 'repair'])
   }),
+  query: z.object({}).passthrough(),
+  params: z.object({ id: z.string().uuid() })
+});
+
+const vehicleDeleteSchema = z.object({
+  body: z.object({}).passthrough(),
   query: z.object({}).passthrough(),
   params: z.object({ id: z.string().uuid() })
 });
@@ -65,7 +72,8 @@ export const vehicleRoutes = Router()
   .post('/import/preview', authorize('admin', 'company'), upload.single('file'), previewVehicles)
   .post('/import', authorize('admin', 'company'), upload.single('file'), importVehicles)
   .post('/', authorize('admin', 'company'), validate(vehicleSchema), createMaster('vehicles'))
-  .patch('/:id/status', authorize('admin', 'company'), validate(vehicleStatusSchema), updateVehicleStatus);
+  .patch('/:id/status', authorize('admin', 'company'), validate(vehicleStatusSchema), updateVehicleStatus)
+  .delete('/:id', authorize('admin', 'company'), validate(vehicleDeleteSchema), deleteMaster('vehicles'));
 
 export const mineRoutes = Router()
   .get('/', listMaster('mines'))

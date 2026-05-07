@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { authorize } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
-import { createRoute, getDistance, listRoutes } from '../controllers/routeController.js';
+import { createRoute, deleteRoute, getDistance, listRoutes } from '../controllers/routeController.js';
 
 const router = Router();
 
@@ -26,9 +26,15 @@ const distanceSchema = z.object({
   params: z.object({})
 });
 
+const idSchema = z.object({
+  body: z.object({}).passthrough(),
+  query: z.object({}).passthrough(),
+  params: z.object({ id: z.string().uuid() })
+});
+
 router.get('/', listRoutes);
 router.post('/', authorize('admin'), validate(createSchema), createRoute);
 router.get('/distance', validate(distanceSchema), getDistance);
+router.delete('/:id', authorize('admin'), validate(idSchema), deleteRoute);
 
 export default router;
-

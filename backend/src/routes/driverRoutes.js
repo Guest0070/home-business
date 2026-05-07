@@ -1,7 +1,17 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
-import { createDriver, listDriverHistory, listDrivers, updateDriver, updateDriverStatus } from '../controllers/driverController.js';
+import {
+  createDriver,
+  createDriverSalaryPayment,
+  deleteDriver,
+  deleteDriverSalaryPayment,
+  listDriverHistory,
+  listDrivers,
+  listDriverSalaryPayments,
+  updateDriver,
+  updateDriverStatus
+} from '../controllers/driverController.js';
 import { downloadDriverTemplate, exportDrivers, importDrivers, previewDrivers } from '../controllers/driverExcelController.js';
 import { authorize } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
@@ -44,6 +54,12 @@ const updateSchema = z.object({
   params: z.object({ id: z.string().uuid() })
 });
 
+const idSchema = z.object({
+  body: z.object({}).passthrough(),
+  query: z.object({}).passthrough(),
+  params: z.object({ id: z.string().uuid() })
+});
+
 const statusSchema = z.object({
   body: z.object({
     status: z.enum(['available', 'on_duty', 'vacation', 'inactive']),
@@ -60,19 +76,55 @@ const listSchema = z.object({
   body: z.object({}).passthrough(),
   query: z.object({
     status: z.enum(['available', 'on_duty', 'vacation', 'inactive']).optional(),
-    activeOnly: z.enum(['true', 'false']).optional()
+    activeOnly: z.enum(['true', 'false']).optional(),
+    includeArchived: z.enum(['true', 'false']).optional()
   }),
   params: z.object({})
 });
 
+const salaryPaymentBody = z.object({
+  driver_id: z.string().uuid(),
+  payment_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  amount: z.coerce.number().positive(),
+  reference_no: z.string().max(120).optional(),
+  narration: z.string().min(2).max(500),
+  notes: z.string().optional()
+});
+
+const salaryPaymentCreateSchema = z.object({
+  body: salaryPaymentBody,
+  query: z.object({}).passthrough(),
+  params: z.object({})
+});
+
+const salaryPaymentListSchema = z.object({
+  body: z.object({}).passthrough(),
+  query: z.object({
+    driverId: z.string().uuid().optional(),
+    from: z.string().optional(),
+    to: z.string().optional()
+  }),
+  params: z.object({})
+});
+
+const salaryPaymentIdSchema = z.object({
+  body: z.object({}).passthrough(),
+  query: z.object({}).passthrough(),
+  params: z.object({ salaryPaymentId: z.string().uuid() })
+});
+
 router.get('/', validate(listSchema), listDrivers);
 router.get('/history', listDriverHistory);
+router.get('/salary-payments', validate(salaryPaymentListSchema), listDriverSalaryPayments);
 router.get('/template', authorize('admin', 'company'), downloadDriverTemplate);
 router.get('/export', authorize('admin', 'company'), exportDrivers);
 router.post('/import/preview', authorize('admin', 'company'), upload.single('file'), previewDrivers);
 router.post('/import', authorize('admin', 'company'), upload.single('file'), importDrivers);
 router.post('/', authorize('admin', 'company'), validate(createSchema), createDriver);
+router.post('/salary-payments', authorize('admin', 'company'), validate(salaryPaymentCreateSchema), createDriverSalaryPayment);
 router.put('/:id', authorize('admin', 'company'), validate(updateSchema), updateDriver);
 router.patch('/:id/status', authorize('admin', 'company'), validate(statusSchema), updateDriverStatus);
+router.delete('/salary-payments/:salaryPaymentId', authorize('admin', 'company'), validate(salaryPaymentIdSchema), deleteDriverSalaryPayment);
+router.delete('/:id', authorize('admin', 'company'), validate(idSchema), deleteDriver);
 
 export default router;

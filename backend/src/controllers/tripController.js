@@ -58,3 +58,64 @@ export async function createTrip(req, res, next) {
     next(error);
   }
 }
+
+export async function listTripHalts(req, res, next) {
+  try {
+    const result = await query(
+      `SELECT h.*, t.lr_number, t.trip_date, v.vehicle_no, t.driver_name
+       FROM trip_halt_logs h
+       JOIN trips t ON t.id = h.trip_id
+       JOIN vehicles v ON v.id = t.vehicle_id
+       WHERE h.trip_id = $1
+       ORDER BY h.started_at DESC`,
+      [req.params.id]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function createTripHalt(req, res, next) {
+  try {
+    const result = await withTransaction(async (client) => {
+      const trip = await client.query('SELECT id FROM trips WHERE id = $1', [req.params.id]);
+      if (!trip.rows[0]) throw new ApiError(404, 'Trip not found');
+
+      const created = await client.query(
+        `INSERT INTO trip_halt_logs (trip_id, halt_type, started_at, location, notes, reported_by)
+         VALUES ($1,$2,COALESCE($3::timestamptz, NOW()),$4,$5,$6)
+         RETURNING *`,
+        [
+          req.params.id,
+          req.body.halt_type || 'breakdown',
+          req.body.started_at || null,
+          req.body.location || null,
+          req.body.notes || null,
+          req.user.id
+        ]
+      );
+      return created.rows[0];
+    });
+    res.status(201).json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function closeTripHalt(req, res, next) {
+  try {
+    const result = await query(
+      `UPDATE trip_halt_logs
+       SET ended_at = COALESCE($1::timestamptz, NOW()),
+        notes = COALESCE($2, notes)
+       WHERE id = $3 AND trip_id = $4
+       RETURNING *`,
+      [req.body.ended_at || null, req.body.notes || null, req.params.haltId, req.params.id]
+    );
+    if (!result.rows[0]) throw new ApiError(404, 'Halt log not found');
+    res.json(result.rows[0]);
+  } catch (error) {
+    next(error);
+  }
+}

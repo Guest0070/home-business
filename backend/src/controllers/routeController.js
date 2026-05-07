@@ -45,3 +45,29 @@ export async function getDistance(req, res, next) {
   }
 }
 
+export async function deleteRoute(req, res, next) {
+  try {
+    const linkedTrips = await query(
+      'SELECT COUNT(*)::INT AS count FROM trips WHERE route_id = $1',
+      [req.params.id]
+    );
+    if (Number(linkedTrips.rows[0]?.count || 0) > 0) {
+      throw new ApiError(400, 'This route is already used in trips, so it cannot be removed.');
+    }
+
+    const result = await query(
+      `DELETE FROM routes
+       WHERE id = $1
+       RETURNING *`,
+      [req.params.id]
+    );
+    if (!result.rows[0]) throw new ApiError(404, 'Route not found');
+    res.json({
+      mode: 'deleted',
+      message: 'Route removed successfully.',
+      record: result.rows[0]
+    });
+  } catch (error) {
+    next(error);
+  }
+}

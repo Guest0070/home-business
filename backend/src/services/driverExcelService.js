@@ -132,11 +132,19 @@ async function enrichRows(rows) {
   const vehicleMap = new Map(vehicles.rows.map((row) => [row.vehicle_no.toUpperCase(), row.id]));
   const driverByLicense = new Map(drivers.rows.filter((row) => row.license_no).map((row) => [row.license_no, row]));
   const driverByNamePhone = new Map(drivers.rows.map((row) => [`${row.name.toLowerCase()}|${row.phone || ''}`, row]));
+  const driverByName = new Map();
+  for (const driver of drivers.rows) {
+    const key = driver.name.toLowerCase();
+    const bucket = driverByName.get(key) || [];
+    bucket.push(driver);
+    driverByName.set(key, bucket);
+  }
 
   return rows.map((row) => {
+    const exactNameMatches = driverByName.get(row.name.toLowerCase()) || [];
     const existing = row.license_no
       ? driverByLicense.get(row.license_no)
-      : driverByNamePhone.get(`${row.name.toLowerCase()}|${row.phone || ''}`);
+      : driverByNamePhone.get(`${row.name.toLowerCase()}|${row.phone || ''}`) || (exactNameMatches.length === 1 ? exactNameMatches[0] : null);
 
     let vehicleId = null;
     if (row.current_vehicle_no) {
@@ -154,7 +162,9 @@ async function enrichRows(rows) {
     return {
       ...row,
       action: existing ? 'update' : 'create',
+      existing_id: existing?.id || null,
       existing: existing ? {
+        id: existing.id,
         name: existing.name,
         phone: existing.phone,
         license_no: existing.license_no,
@@ -286,10 +296,7 @@ export async function importDriversFromWorkbook(buffer) {
     for (const row of summary.rows) {
       if (row.errors.length) continue;
       if (row.action === 'update') {
-        const existing = row.existing;
-        const existingResult = row.license_no
-          ? await client.query('SELECT id FROM drivers WHERE license_no = $1', [row.final.license_no || row.license_no || existing.license_no])
-          : await client.query('SELECT id FROM drivers WHERE LOWER(name) = LOWER($1) AND COALESCE(phone, \'\') = COALESCE($2, \'\')', [existing.name, existing.phone]);
+        const existingId = row.existing_id || row.existing?.id;
         await client.query(
           `UPDATE drivers
            SET name = $1, phone = $2, license_no = $3, salary = $4,
@@ -307,11 +314,11 @@ export async function importDriversFromWorkbook(buffer) {
             row.final.vacation_to,
             row.final.notes,
             row.final.is_active,
-            existingResult.rows[0].id
+            existingId
           ]
         );
         await appendDriverStatusHistory(client, {
-          driverId: existingResult.rows[0].id,
+          driverId: existingId,
           status: row.final.status,
           startDate: row.final.status === 'vacation' ? (row.final.vacation_from || todayDate()) : todayDate(),
           endDate: row.final.status === 'vacation' ? row.final.vacation_to : null,

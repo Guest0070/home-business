@@ -1,11 +1,18 @@
 export default function ImportReview({ title, preview, keyField = 'name', onConfirm, busy }) {
   if (!preview) return null;
+  const middleLabel = typeof preview.updates === 'number' ? 'Updates' : 'Duplicates';
+  const middleValue = typeof preview.updates === 'number' ? preview.updates : (preview.duplicates || 0);
+  const warningCount = preview.rows.filter((row) => row.warnings?.length).length;
+  const readyCount = preview.rows.filter((row) => row.errors?.length === 0 && row.action !== 'duplicate').length;
 
   function getKeyValue(row) {
     return row[keyField] || row.final?.[keyField] || row.vehicle_no || row.final?.vehicle_no || row.name || row.final?.name || '-';
   }
 
   function getStatus(row) {
+    if (row.action === 'duplicate') {
+      return { label: 'Duplicate', className: 'bg-slate-100 text-slate-600' };
+    }
     if (row.errors?.length) {
       return { label: 'Error', className: 'bg-red-50 text-red-700' };
     }
@@ -25,19 +32,21 @@ export default function ImportReview({ title, preview, keyField = 'name', onConf
     <section className="panel space-y-3 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h3 className="text-lg font-bold">{title}</h3>
-        <button className="btn-primary" onClick={onConfirm} disabled={busy}>
+        <button className="btn-primary" onClick={onConfirm} disabled={busy || readyCount === 0}>
           {busy ? 'Importing...' : 'Confirm Import'}
         </button>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="rounded border border-slate-200 px-3 py-2 text-sm">Ready: <strong>{readyCount}</strong></div>
         <div className="rounded border border-slate-200 px-3 py-2 text-sm">Creates: <strong>{preview.creates}</strong></div>
-        <div className="rounded border border-slate-200 px-3 py-2 text-sm">Updates: <strong>{preview.updates}</strong></div>
+        <div className="rounded border border-slate-200 px-3 py-2 text-sm">{middleLabel}: <strong>{middleValue}</strong></div>
+        <div className="rounded border border-slate-200 px-3 py-2 text-sm">Warnings: <strong>{warningCount}</strong></div>
         <div className="rounded border border-slate-200 px-3 py-2 text-sm">Failed: <strong>{preview.failed}</strong></div>
       </div>
 
-      <div className="space-y-3 md:hidden">
-        {preview.rows.slice(0, 12).map((row) => (
+      <div className="max-h-[420px] space-y-3 overflow-y-auto pr-1 md:hidden">
+        {preview.rows.map((row) => (
           <article key={`${row.rowNumber}-${getKeyValue(row)}`} className="rounded border border-slate-200 p-3 text-sm">
             <div className="mb-2 flex items-center justify-between gap-3">
               <div className="font-semibold">Row {row.rowNumber}</div>
@@ -61,7 +70,7 @@ export default function ImportReview({ title, preview, keyField = 'name', onConf
         ))}
       </div>
 
-      <div className="hidden overflow-x-auto md:block">
+      <div className="hidden max-h-[420px] overflow-auto md:block">
         <table className="min-w-full text-left text-sm">
           <thead className="bg-slate-100 text-xs uppercase text-slate-600">
             <tr>
@@ -73,7 +82,7 @@ export default function ImportReview({ title, preview, keyField = 'name', onConf
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {preview.rows.slice(0, 12).map((row) => (
+            {preview.rows.map((row) => (
               <tr key={`${row.rowNumber}-${getKeyValue(row)}`}>
                 <td className="px-3 py-2">{row.rowNumber}</td>
                 <td className="px-3 py-2">{row.action}</td>
@@ -86,6 +95,10 @@ export default function ImportReview({ title, preview, keyField = 'name', onConf
             ))}
           </tbody>
         </table>
+      </div>
+
+      <div className="text-xs text-slate-600">
+        Blank optional cells stay blank on new rows and keep current values on matching updates.
       </div>
     </section>
   );

@@ -101,6 +101,28 @@ Blank optional cells are allowed. On updates, blank optional cells keep the curr
 
 Blank optional cells are allowed. On updates, blank optional cells keep the current value.
 
+### Delivery Orders
+
+1. Open `D.O.`
+2. Download template or export existing delivery orders
+3. Fill in Excel
+4. Upload with `Review Delivery Order Excel`
+5. Check the preview
+6. Click `Confirm Import`
+
+Blank optional cells are allowed. On updates, blank optional cells keep the current value.
+
+### Bank Statements
+
+1. Open `Banking`
+2. Add the bank account first if it is not already in the system
+3. Select the bank account in `Import Bank Statement`
+4. Upload `.csv` or `.xlsx`
+5. Review the preview
+6. Click `Confirm Import`
+
+Already imported rows are detected and skipped automatically.
+
 ## Themes
 
 Use the theme selector in the top bar.
@@ -144,6 +166,11 @@ Steps:
 - Delivery orders can be created first, then linked to trips as deliveries happen.
 - In trip entry, typing a new driver name creates that driver automatically when the trip is saved.
 - In payments, selecting a D.O. fills the party automatically.
+- In payments, selecting a bank account creates the linked bank entry automatically.
+- The Reports page supports timeframe-based export in `Standard`, `Zoho`, and `Tally` presets.
+- The Compliance page tracks insurance, road tax, fitness, all India permit, pollution, and mining certificate reminders.
+- Vehicles now include `chassis_last5`, which is useful for road tax work.
+- The Banking page supports multiple bank accounts, statement import, manual entries, and loan schedule reminders.
 - The GPS page supports WheelsEye portal mode now. Live API mode can be switched on later if WheelsEye gives enterprise API details.
 
 ## Future Hosting

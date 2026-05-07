@@ -8,7 +8,7 @@ import {
   previewTrips
 } from '../controllers/tripExcelController.js';
 import { validate } from '../middleware/validate.js';
-import { createTrip, getTrip, listTrips } from '../controllers/tripController.js';
+import { closeTripHalt, createTrip, createTripHalt, getTrip, listTripHalts, listTrips } from '../controllers/tripController.js';
 
 const router = Router();
 const upload = multer({
@@ -35,6 +35,12 @@ const tripSchema = z.object({
     factory_id: z.string().uuid().optional().or(z.literal('')),
     weight_tons: z.coerce.number().positive().optional(),
     rate_per_ton: z.coerce.number().nonnegative().optional(),
+    return_party_name: z.string().max(160).optional(),
+    return_from_name: z.string().max(160).optional(),
+    return_to_name: z.string().max(160).optional(),
+    return_weight_tons: z.coerce.number().positive().optional(),
+    return_rate_per_ton: z.coerce.number().nonnegative().optional(),
+    return_notes: z.string().optional(),
     notes: z.string().optional(),
     expense: z.object({
       diesel_litres: z.coerce.number().nonnegative().optional(),
@@ -66,12 +72,35 @@ const idSchema = z.object({
   params: z.object({ id: z.string().uuid() })
 });
 
+const haltSchema = z.object({
+  body: z.object({
+    halt_type: z.enum(['breakdown', 'rto_stop', 'loading_delay', 'unloading_delay', 'other']).optional(),
+    started_at: z.string().optional(),
+    location: z.string().max(240).optional(),
+    notes: z.string().optional()
+  }),
+  query: z.object({}).passthrough(),
+  params: z.object({ id: z.string().uuid() })
+});
+
+const closeHaltSchema = z.object({
+  body: z.object({
+    ended_at: z.string().optional(),
+    notes: z.string().optional()
+  }),
+  query: z.object({}).passthrough(),
+  params: z.object({ id: z.string().uuid(), haltId: z.string().uuid() })
+});
+
 router.get('/', validate(listSchema), listTrips);
 router.get('/template', downloadTripTemplate);
 router.get('/export', exportTripsWorkbook);
 router.post('/import/preview', upload.single('file'), previewTrips);
 router.post('/import', upload.single('file'), importTrips);
 router.post('/', validate(tripSchema), createTrip);
+router.get('/:id/halts', validate(idSchema), listTripHalts);
+router.post('/:id/halts', validate(haltSchema), createTripHalt);
+router.patch('/:id/halts/:haltId/close', validate(closeHaltSchema), closeTripHalt);
 router.get('/:id', validate(idSchema), getTrip);
 
 export default router;
